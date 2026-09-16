@@ -41,7 +41,7 @@ PowerShell blocking the npm wrapper. Run this once, no admin needed:
 
 1. Clone it somewhere that isn't OneDrive. OneDrive syncs the .git folder while
    Git is writing to it and you get lock errors and weird corruption. I keep
-   mine at C:\Users\<you>\IFT401.
+   mine at `C:\Users\<you>\IFT401`.
 
         git clone https://github.com/kish1212-ASU/IFT401_Capstone_Fall-2026.git
         cd IFT401_Capstone_Fall-2026
@@ -137,8 +137,8 @@ Eastern stays 9:30 Eastern through the November DST change.
 
 ## How we're working
 
-Branches are feature/<name>-<thing>, so feature/kyle-price-generator or
-feature/daniel-portfolio-page. Push your branch and open a PR rather than
+Branches are `feature/<name>-<thing>`, so `feature/kyle-price-generator` or
+`feature/daniel-portfolio-page`. Push your branch and open a PR rather than
 committing straight to main. It's less about process and more about the three
 of us not overwriting each other.
 
