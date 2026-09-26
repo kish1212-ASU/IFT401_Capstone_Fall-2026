@@ -126,6 +126,9 @@ function getStocks() {
         change: Math.round(changePct * 100) / 100,
         volume: _formatVolume(Number(r.volume)),
         marketCap: Number(r.market_cap), // server already computes this — no need to re-derive it
+        openingPrice: opening,
+        dayHigh: Number(r.day_high),
+        dayLow: Number(r.day_low),
       };
     }));
 }
@@ -399,4 +402,44 @@ function withdrawCash(amount) {
   const newBalance = cash - amount;
   _saveCash(newBalance);
   return _fakeDelay({ success: true, newBalance });
+}
+
+// ---------------- Portfolio (SPEC ONLY — GET /portfolio) ----------------
+// Contract response: { cash_balance, holdings_value, total_value, holdings[] }
+// Real holdings also include avg_cost_basis and gain_loss — our mock
+// doesn't track purchase cost, only current quantity, so those two
+// fields are left out here until either the real endpoint exists or
+// someone extends the mock to track cost basis on each buy.
+//
+// TODO: once GET /portfolio is real, swap this for a plain:
+//   return fetch(`${API_BASE}/portfolio`).then(res => res.json());
+function getPortfolioSummary() {
+  _settlePendingOrders();
+  const cash = _loadCash();
+  const portfolio = _loadPortfolio(); // { ticker: quantity }
+
+  return getStocks().then(stocks => {
+    const holdings = Object.entries(portfolio)
+      .filter(([, qty]) => qty > 0)
+      .map(([ticker, quantity]) => {
+        const stock = stocks.find(s => s.ticker === ticker);
+        const price = stock ? stock.price : 0;
+        return {
+          ticker,
+          company: stock ? stock.company : "(unknown — not in current listing)",
+          quantity,
+          price,
+          marketValue: price * quantity,
+        };
+      });
+
+    const holdingsValue = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+
+    return {
+      cashBalance: cash,
+      holdingsValue,
+      totalValue: cash + holdingsValue,
+      holdings,
+    };
+  });
 }

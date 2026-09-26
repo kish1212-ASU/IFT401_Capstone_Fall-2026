@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { id: "buy", label: "Buy", href: "buy.html" },
   { id: "sell", label: "Sell", href: "sell.html" },
   { id: "cash", label: "Deposit/Withdraw", href: "deposit-withdraw.html" },
+  { id: "portfolio", label: "Portfolio", href: "portfolio.html" },
   { id: "account", label: "Create Account", href: "create-account.html" },
   { id: "admin", label: "Admin: Create Stock", href: "create-stock.html" },
 ];

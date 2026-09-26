@@ -205,6 +205,14 @@ table.stocks th {
 
 table.stocks tr:last-child td { border-bottom: none; }
 
+.stock-row {
+  cursor: pointer;
+}
+
+.stock-row:hover {
+  background: #f2f6fa;
+}
+
 .change-up { color: var(--green); }
 .change-down { color: var(--red); }
 
