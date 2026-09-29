@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockSim — Transaction History</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="site-nav"></div>
+
+  <main class="wide">
+    <h1>Transaction History</h1>
+    <p class="page-sub">Every buy, sell, deposit, and withdrawal on your account, newest first.</p>
+
+    <div class="table-scroll">
+      <table class="stocks" id="tx-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Ticker</th>
+            <th>Quantity</th>
+            <th>Price/Share</th>
+            <th>Total</th>
+            <th>Balance After</th>
+          </tr>
+        </thead>
+        <tbody id="tx-body">
+          <tr><td colspan="7">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="js/components.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    renderNav("transactions");
+
+    if (requireLogin()) {
+      function formatMoney(n) {
+        return n === null || n === undefined ? "—" : "$" + Number(n).toFixed(2);
+      }
+
+      function formatDate(iso) {
+        const d = new Date(iso);
+        return d.toLocaleString();
+      }
+
+      function render() {
+        const txs = getTransactionHistory();
+        const body = document.getElementById("tx-body");
+
+        if (txs.length === 0) {
+          body.innerHTML = `<tr><td colspan="7">No transactions yet. Buy, sell, deposit, or withdraw something first.</td></tr>`;
+          return;
+        }
+
+        body.innerHTML = txs.map(t => `
+          <tr>
+            <td>${formatDate(t.createdAt)}</td>
+            <td>${t.transactionType.toUpperCase()}</td>
+            <td>${t.ticker || "—"}</td>
+            <td>${t.quantity ?? "—"}</td>
+            <td>${formatMoney(t.pricePerShare)}</td>
+            <td>${formatMoney(t.totalAmount)}</td>
+            <td>${formatMoney(t.balanceAfter)}</td>
+          </tr>
+        `).join("");
+      }
+
+      render();
+      setInterval(render, 2000); // catches pending buy/sell orders as they execute
+    }
+  </script>
+</body>
+</html>

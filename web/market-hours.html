@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockSim — Market Hours (Admin)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="site-nav"></div>
+
+  <main>
+    <h1>Market Hours &amp; Schedule</h1>
+    <p class="page-sub">Admin only — controls when customers can place trades.</p>
+
+    <div id="market-content">
+      <div class="panel">
+        <div class="est-box" id="status-box">Checking market status…</div>
+
+        <label for="marketOpen">Market Open Time</label>
+        <input type="time" id="marketOpen">
+
+        <label for="marketClose">Market Close Time</label>
+        <input type="time" id="marketClose">
+
+        <label for="timezone">Timezone</label>
+        <input type="text" id="timezone">
+
+        <label>Trading Days</label>
+        <div class="tabs" id="days-row" style="margin: 8px 0 16px;"></div>
+
+        <label for="holidays">Holidays (comma-separated dates, YYYY-MM-DD)</label>
+        <input type="text" id="holidays">
+
+        <div id="market-msg" class="msg"></div>
+
+        <button type="button" class="btn" id="submit-btn">Save Market Hours</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/components.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    renderNav("market");
+
+    if (requireAdmin()) {
+      const DAY_NAMES = [
+        [1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"],
+      ];
+      let selectedDays = [];
+
+      const statusBox = document.getElementById("status-box");
+      const openInput = document.getElementById("marketOpen");
+      const closeInput = document.getElementById("marketClose");
+      const tzInput = document.getElementById("timezone");
+      const holidaysInput = document.getElementById("holidays");
+      const daysRow = document.getElementById("days-row");
+      const msgBox = document.getElementById("market-msg");
+      const submitBtn = document.getElementById("submit-btn");
+
+      function showMsg(text, type) {
+        msgBox.textContent = text;
+        msgBox.className = `msg show ${type}`;
+      }
+
+      function renderStatus() {
+        const status = getMarketStatus();
+        statusBox.textContent = status.isOpen
+          ? "Market is currently OPEN (based on your computer's local clock)"
+          : "Market is currently CLOSED (based on your computer's local clock)";
+        statusBox.style.color = status.isOpen ? "#1a7f37" : "#b00020";
+      }
+
+      function renderDayButtons() {
+        daysRow.innerHTML = DAY_NAMES.map(([num, label]) => `
+          <button type="button" class="tab-btn day-btn ${selectedDays.includes(num) ? "active" : ""}" data-day="${num}" style="flex: none; padding: 8px 12px; border-radius: 4px; margin-right: 4px;">${label}</button>
+        `).join("");
+        daysRow.querySelectorAll(".day-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const day = Number(btn.dataset.day);
+            selectedDays = selectedDays.includes(day)
+              ? selectedDays.filter(d => d !== day)
+              : [...selectedDays, day];
+            renderDayButtons();
+          });
+        });
+      }
+
+      function loadCurrent() {
+        const m = getMarketStatus();
+        openInput.value = m.marketOpen;
+        closeInput.value = m.marketClose;
+        tzInput.value = m.timezone;
+        holidaysInput.value = m.holidays.join(", ");
+        selectedDays = [...m.tradingDays];
+        renderDayButtons();
+        renderStatus();
+      }
+
+      submitBtn.addEventListener("click", () => {
+        const holidays = holidaysInput.value.split(",").map(s => s.trim()).filter(Boolean);
+
+        submitBtn.disabled = true;
+        msgBox.className = "msg";
+
+        updateMarketHours({
+          marketOpen: openInput.value,
+          marketClose: closeInput.value,
+          timezone: tzInput.value,
+          tradingDays: selectedDays,
+          holidays,
+        }).then(result => {
+          submitBtn.disabled = false;
+          if (result.success) {
+            showMsg("Market hours updated.", "success");
+            renderStatus();
+          } else {
+            showMsg(result.error, "error");
+          }
+        });
+      });
+
+      loadCurrent();
+      setInterval(renderStatus, 5000);
+    }
+  </script>
+</body>
+</html>

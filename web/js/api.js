@@ -28,7 +28,8 @@ const API_BASE = "http://localhost:3000";
 // fake in-browser mock. A real backend hashes passwords and would
 // never store or compare them like this.
 const _mockAccounts = [
-  { username: "jsmith", email: "jsmith@example.com", password: "password123", fullName: "Jane Smith" },
+  { username: "jsmith", email: "jsmith@example.com", password: "password123", fullName: "Jane Smith", role: "customer" },
+  { username: "admin", email: "admin@stocksim.local", password: "admin123", fullName: "System Admin", role: "admin" },
 ];
 
 // Small helper so the still-mocked functions "feel" like a real
@@ -90,7 +91,7 @@ function login({ username, password }) {
   if (!account) {
     return _fakeDelay({ success: false, error: "Incorrect username or password." });
   }
-  const user = { user_id: _mockAccounts.indexOf(account) + 1, username: account.username, role: "customer" };
+  const user = { user_id: _mockAccounts.indexOf(account) + 1, username: account.username, role: account.role || "customer" };
   _setCurrentUser(user);
   return _fakeDelay({ success: true, user });
 }
@@ -120,6 +121,7 @@ function getStocks() {
       const opening = Number(r.opening_price) || price;
       const changePct = opening ? ((price - opening) / opening) * 100 : 0;
       return {
+        stockId: r.stock_id,
         ticker: r.ticker,
         company: r.company_name,
         price: price,
@@ -130,7 +132,15 @@ function getStocks() {
         dayHigh: Number(r.day_high),
         dayLow: Number(r.day_low),
       };
-    }));
+    }))
+    .then(realStocks => {
+      // Stocks created through the mock admin form (see createStock below)
+      // don't exist in the real database, so they're appended here purely
+      // client-side. They won't fluctuate with the real price generator
+      // since nothing on the server knows about them.
+      const mockStocks = _loadMockCreatedStocks();
+      return [...realStocks, ...mockStocks];
+    });
 }
 
 // ---------------- Create Account (SPEC ONLY — POST /users) ----------------
@@ -151,25 +161,21 @@ function getStocks() {
 //     error: res.ok ? null : body.error,
 //     user: res.ok ? body : null,
 //   })));
+// REAL as of PR #2 (Alex), merged into main. Login below is still mocked
+// until PR #3 (JWT auth) merges — so an account created here is real in
+// Alex's database, but you can't log into it yet with this same page.
 function createAccount({ fullName, username, email, password }) {
-  const taken = _mockAccounts.some(
-    a => a.username === username || a.email === email
+  return fetch(`${API_BASE}/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, email, full_name: fullName, password }),
+  }).then(res =>
+    res.json().then(body => ({
+      success: res.ok,
+      error: res.ok ? null : body.error,
+      user: res.ok ? body : null,
+    }))
   );
-  if (taken) {
-    return _fakeDelay({ success: false, error: "Username or email already taken." });
-  }
-  _mockAccounts.push({ username, email, password, fullName });
-  return _fakeDelay({
-    success: true,
-    user: {
-      user_id: _mockAccounts.length,
-      username,
-      email,
-      full_name: fullName,
-      role: "customer",
-      cash_balance: "0.00",
-    },
-  });
 }
 
 // ---------------- Create Stock (SPEC ONLY — POST /stocks, admin) ----------------
@@ -189,24 +195,46 @@ function createAccount({ fullName, username, email, password }) {
 //     success: res.ok,
 //     error: res.ok ? null : body.error,
 //   })));
-const _mockStocks = [
-  { ticker: "AAPL", company: "Apple Inc.", price: 187.42, change: 0.63, volume: "12.4M" },
-  { ticker: "TSLA", company: "Tesla Inc.", price: 241.05, change: -1.12, volume: "9.8M" },
-];
+// Stocks created through the mock admin form, kept in localStorage so
+// they actually show up in getStocks() below — otherwise "creating" a
+// stock would have no visible effect anywhere, which would look broken
+// in a screenshot. Real duplicate-ticker checking happens against BOTH
+// this list and whatever the real /stocks endpoint currently has.
+const MOCK_CREATED_STOCKS_KEY = "stocksim_mock_created_stocks";
+
+function _loadMockCreatedStocks() {
+  const raw = localStorage.getItem(MOCK_CREATED_STOCKS_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+function _saveMockCreatedStocks(list) {
+  localStorage.setItem(MOCK_CREATED_STOCKS_KEY, JSON.stringify(list));
+}
 
 function createStock({ companyName, ticker, volume, initialPrice }) {
-  const exists = _mockStocks.some(s => s.ticker.toLowerCase() === ticker.toLowerCase());
-  if (exists) {
-    return _fakeDelay({ success: false, error: "Ticker already exists." });
-  }
-  _mockStocks.push({
-    ticker: ticker.toUpperCase(),
-    company: companyName,
-    price: Number(initialPrice),
-    change: 0,
-    volume: Number(volume).toLocaleString(),
+  ticker = ticker.toUpperCase();
+  return getStocks().then(realStocks => {
+    const mockStocks = _loadMockCreatedStocks();
+    const exists = [...realStocks, ...mockStocks].some(s => s.ticker === ticker);
+    if (exists) {
+      return { success: false, error: "Ticker already exists." };
+    }
+
+    const price = Number(initialPrice);
+    mockStocks.push({
+      stockId: `mock-${ticker}`,
+      ticker,
+      company: companyName,
+      price,
+      change: 0,
+      volume: _formatVolume(Number(volume)),
+      marketCap: price * Number(volume),
+      openingPrice: price, // brand new — opens at its own initial price
+      dayHigh: price,
+      dayLow: price,
+    });
+    _saveMockCreatedStocks(mockStocks);
+    return { success: true };
   });
-  return _fakeDelay({ success: true });
 }
 
 // ---------------- Not built yet (stub pages use these) ----------------
@@ -288,6 +316,14 @@ function _settlePendingOrders() {
         portfolio[order.ticker] = (portfolio[order.ticker] || 0) - order.quantity;
         cash += order.price * order.quantity;
       }
+      _logTransaction({
+        transactionType: order.type,
+        ticker: order.ticker,
+        quantity: order.quantity,
+        pricePerShare: order.price,
+        totalAmount: order.price * order.quantity,
+        balanceAfter: cash,
+      });
     } else {
       stillPending.push(order);
     }
@@ -316,6 +352,11 @@ function getPendingOrders() {
 function submitBuyOrder({ ticker, quantity, price }) {
   quantity = Number(quantity);
   _settlePendingOrders();
+
+  if (!getMarketStatus().isOpen) {
+    return _fakeDelay({ success: false, error: "Market is closed. Trades can only be placed during market hours." });
+  }
+
   const cash = _loadCash();
   const cost = quantity * price;
 
@@ -344,6 +385,11 @@ function submitBuyOrder({ ticker, quantity, price }) {
 function submitSellOrder({ ticker, quantity, price }) {
   quantity = Number(quantity);
   _settlePendingOrders();
+
+  if (!getMarketStatus().isOpen) {
+    return _fakeDelay({ success: false, error: "Market is closed. Trades can only be placed during market hours." });
+  }
+
   const owned = _loadPortfolio()[ticker] || 0;
 
   if (!quantity || quantity <= 0) {
@@ -387,6 +433,14 @@ function depositCash(amount) {
   }
   const newBalance = _loadCash() + amount;
   _saveCash(newBalance);
+  _logTransaction({
+    transactionType: "deposit",
+    ticker: null,
+    quantity: null,
+    pricePerShare: null,
+    totalAmount: amount,
+    balanceAfter: newBalance,
+  });
   return _fakeDelay({ success: true, newBalance });
 }
 
@@ -401,6 +455,14 @@ function withdrawCash(amount) {
   }
   const newBalance = cash - amount;
   _saveCash(newBalance);
+  _logTransaction({
+    transactionType: "withdrawal",
+    ticker: null,
+    quantity: null,
+    pricePerShare: null,
+    totalAmount: amount,
+    balanceAfter: newBalance,
+  });
   return _fakeDelay({ success: true, newBalance });
 }
 
@@ -442,4 +504,133 @@ function getPortfolioSummary() {
       holdings,
     };
   });
+}
+
+// ===========================================================
+// MOCK MARKET HOURS (GET /market, PUT /market — admin)
+//
+// NOTE ON TIMEZONES: the real contract stores hours as local clock
+// time + a named IANA timezone (e.g. "America/New_York") so 9:30
+// stays 9:30 through DST changes. Doing that conversion correctly
+// in plain JS needs real timezone-aware logic. This mock instead
+// just compares against the BROWSER's own local time — good enough
+// to demo the open/closed behavior, not something to treat as
+// correct once the real backend (which should do this properly)
+// exists.
+// ===========================================================
+
+const MARKET_KEY = "stocksim_mock_market";
+
+// Deliberately wide open by default (all 7 days, effectively 24hr) so that
+// testing/demoing buy and sell doesn't randomly break depending on what
+// time of day or day of week someone happens to be clicking around. Use
+// the Market Hours admin page to narrow this to real hours (e.g. 9:30–16:00
+// Eastern, weekdays only) specifically when you want to DEMONSTRATE the
+// restriction — narrow it, show a trade get rejected, then widen it back.
+function _defaultMarket() {
+  return {
+    marketOpen: "00:00",
+    marketClose: "23:59",
+    timezone: "America/New_York",
+    tradingDays: [1, 2, 3, 4, 5, 6, 7], // ISO weekday, 1 = Monday
+    holidays: [],
+  };
+}
+
+function _loadMarket() {
+  const raw = localStorage.getItem(MARKET_KEY);
+  return raw ? JSON.parse(raw) : _defaultMarket();
+}
+
+function _saveMarket(m) {
+  localStorage.setItem(MARKET_KEY, JSON.stringify(m));
+}
+
+// IMPORTANT: marketOpen/marketClose are meant to be in the market's own
+// timezone (e.g. Eastern), not the viewer's local time — someone testing
+// from Arizona is 2-3 hours off from New York depending on the time of
+// year, and comparing raw local time against these numbers would be wrong.
+// This uses Intl to figure out what day/time it actually is IN that
+// timezone right now, rather than trusting the browser's local clock.
+function _nowInMarketTimezone(timezone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    weekday: "short",
+  }).formatToParts(new Date());
+
+  const get = (type) => parts.find(p => p.type === type).value;
+  const weekdayMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+
+  return {
+    dateStr: `${get("year")}-${get("month")}-${get("day")}`,
+    hhmm: `${get("hour")}:${get("minute")}`,
+    isoWeekday: weekdayMap[get("weekday")],
+  };
+}
+
+// TODO: once real, swap this for:
+//   return fetch(`${API_BASE}/market`).then(res => res.json());
+function getMarketStatus() {
+  const m = _loadMarket();
+  const { dateStr, hhmm, isoWeekday } = _nowInMarketTimezone(m.timezone);
+
+  const isTradingDay = m.tradingDays.includes(isoWeekday);
+  const isHoliday = m.holidays.includes(dateStr);
+  const withinHours = hhmm >= m.marketOpen && hhmm < m.marketClose;
+
+  return {
+    isOpen: isTradingDay && !isHoliday && withinHours,
+    marketOpen: m.marketOpen,
+    marketClose: m.marketClose,
+    timezone: m.timezone,
+    tradingDays: m.tradingDays,
+    holidays: m.holidays,
+  };
+}
+
+// TODO: once real, swap this for:
+//   return fetch(`${API_BASE}/market`, {
+//     method: "PUT",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({ market_open, market_close, timezone, trading_days, holidays }),
+//   }).then(res => res.json().then(body => ({ success: res.ok, error: res.ok ? null : body.error })));
+function updateMarketHours({ marketOpen, marketClose, timezone, tradingDays, holidays }) {
+  if (marketClose <= marketOpen) {
+    return _fakeDelay({ success: false, error: "Close time must be after open time." });
+  }
+  _saveMarket({ marketOpen, marketClose, timezone, tradingDays, holidays });
+  return _fakeDelay({ success: true });
+}
+
+// ===========================================================
+// MOCK TRANSACTION HISTORY (GET /transactions)
+//
+// Logs every buy/sell execution and every deposit/withdrawal so
+// the Transaction History page has something real to show. Stored
+// in localStorage like everything else in this mock.
+// ===========================================================
+
+const TRANSACTIONS_KEY = "stocksim_mock_transactions";
+
+function _loadTransactions() {
+  const raw = localStorage.getItem(TRANSACTIONS_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+function _logTransaction(entry) {
+  const list = _loadTransactions();
+  list.unshift({
+    transactionId: Date.now(),
+    createdAt: new Date().toISOString(),
+    ...entry,
+  });
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(list));
+}
+
+// TODO: once real, swap this for:
+//   return fetch(`${API_BASE}/transactions`).then(res => res.json());
+function getTransactionHistory() {
+  return _loadTransactions(); // already stored newest-first
 }
