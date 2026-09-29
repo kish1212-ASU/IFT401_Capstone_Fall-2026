@@ -6,15 +6,15 @@ since we're all building against this.
 
 Base URL in local dev: `http://localhost:3000`
 
-Two things still open, both flagged inline below:
+One thing still open, flagged inline below:
 
 - **Volume.** Business case says volume is total shares purchased and market
   cap is volume times price. Unclear if it's static (admin sets it once) or a
   running counter the trade logic increments. The field exists either way, so
   this doesn't change the shape of any response.
-- **Daily price fields.** `opening_price`, `day_high`, `day_low` may come from
-  columns on `stocks` or a separate daily table. Either way the JSON keys stay
-  the same.
+
+Decided: `opening_price`, `day_high`, and `day_low` are columns on the
+`stocks` table, next to `current_price`. No separate daily price table.
 
 ## Conventions
 
@@ -158,7 +158,9 @@ No auth. Powers the main listing page.
 Only active stocks. Sorted by ticker.
 
 OPEN: whether `volume` changes after trades.
-OPEN: where the three daily price fields come from.
+
+`opening_price`, `day_high`, and `day_low` are stored on `stocks` and written
+by the price generator (see the generator notes at the bottom).
 
 ### GET /stocks/:id
 
@@ -365,7 +367,9 @@ Create a stock. Business case: company name, ticker, volume, initial price.
     403  not an admin
     409  ticker already exists
 
-`current_price` is set to `initial_price` on creation.
+`current_price`, `opening_price`, `day_high`, and `day_low` are all set to
+`initial_price` on creation, so a new stock never shows $0.00 in the open/high/low
+panel before the generator's first cycle.
 
 ### PATCH /stocks/:id  (admin)
 
@@ -413,6 +417,17 @@ Change hours and schedule.
 Validation matches the decision diamond in the Change Market Hours process map.
 
 ---
+
+## Who owns what
+
+- **Alex:** `POST /users`, `POST /auth/login`, `POST /auth/logout`, JWT
+  middleware, `GET /users/me`, `POST /stocks`, and the seed data (one admin and
+  one customer, credentials in the README). Target: pushed to her branch by
+  Fri Oct 2, route by route as each one works. After that: `GET /portfolio`,
+  `GET /transactions`, `POST /cash/deposit`, `POST /cash/withdraw`.
+- **Kyle:** the price generator, `GET /market` and `PUT /market`, then
+  `POST /orders`, `GET /orders`, `DELETE /orders/:id`, and the order executor.
+- **Daniel:** frontend, swapping mock calls for the real routes as they land.
 
 ## Notes for the price generator
 
