@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockSim — Log In</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="site-nav"></div>
+
+  <main>
+    <h1>Log In</h1>
+    <p class="page-sub">Use a demo account: <strong>jsmith</strong> / <strong>password123</strong>, or an account you created.</p>
+
+    <div class="panel">
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input type="text" id="username" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" required>
+
+        <div id="login-msg" class="msg"></div>
+
+        <button type="submit" class="btn" id="submit-btn">Log In</button>
+      </form>
+    </div>
+  </main>
+
+  <script src="js/components.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    renderNav("login");
+
+    const form = document.getElementById("login-form");
+    const msgBox = document.getElementById("login-msg");
+    const submitBtn = document.getElementById("submit-btn");
+
+    function showMsg(text, type) {
+      msgBox.textContent = text;
+      msgBox.className = `msg show ${type}`;
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Logging in…";
+      msgBox.className = "msg";
+
+      login({ username, password }).then(result => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Log In";
+
+        if (result.success) {
+          showMsg(`Logged in as ${result.user.username}. Redirecting…`, "success");
+          setTimeout(() => { window.location.href = "index.html"; }, 700);
+        } else {
+          showMsg(result.error, "error");
+        }
+      });
+    });
+  </script>
+</body>
+</html>

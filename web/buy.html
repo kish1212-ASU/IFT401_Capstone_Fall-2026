@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockSim — Buy Stock</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="site-nav"></div>
+
+  <main>
+    <h1>Buy Stock</h1>
+    <p class="page-sub">Purchase shares at market price.</p>
+
+    <div class="panel">
+      <label for="ticker">Stock</label>
+      <select id="ticker"></select>
+
+      <div class="two-col">
+        <div class="stat-box">
+          <div class="stat-label">Current Price</div>
+          <div class="stat-value" id="current-price">$0.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Cash Balance Available</div>
+          <div class="stat-value" id="cash-balance">$0.00</div>
+        </div>
+      </div>
+
+      <label for="quantity">Quantity to Buy</label>
+      <input type="number" id="quantity" min="1" value="1">
+
+      <div class="est-box" id="est-box">Estimated Cost: $0.00</div>
+
+      <div id="buy-msg" class="msg"></div>
+
+      <button type="button" class="btn" id="submit-btn">Buy</button>
+    </div>
+
+    <div class="panel" style="margin-top: 20px;">
+      <h2 class="panel-title">Pending Orders</h2>
+      <div id="pending-list">
+        <p class="muted-note">No pending orders.</p>
+      </div>
+      <p class="muted-note">Orders execute automatically a few seconds after you submit them — cancel before then if you change your mind.</p>
+    </div>
+  </main>
+
+  <script src="js/components.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    renderNav("buy");
+
+    if (requireLogin()) {
+    let stocks = [];
+    const tickerSelect = document.getElementById("ticker");
+    const priceBox = document.getElementById("current-price");
+    const cashBox = document.getElementById("cash-balance");
+    const qtyInput = document.getElementById("quantity");
+    const estBox = document.getElementById("est-box");
+    const msgBox = document.getElementById("buy-msg");
+    const submitBtn = document.getElementById("submit-btn");
+    const pendingList = document.getElementById("pending-list");
+
+    function showMsg(text, type) {
+      msgBox.textContent = text;
+      msgBox.className = `msg show ${type}`;
+    }
+
+    function currentPrice() {
+      const s = stocks.find(s => s.ticker === tickerSelect.value);
+      return s ? s.price : 0;
+    }
+
+    function updateEstimate() {
+      const qty = Number(qtyInput.value) || 0;
+      priceBox.textContent = "$" + currentPrice().toFixed(2);
+      estBox.textContent = "Estimated Cost: $" + (qty * currentPrice()).toFixed(2);
+    }
+
+    function refreshCash() {
+      cashBox.textContent = "$" + getMockCashBalance().toFixed(2);
+    }
+
+    function refreshPending() {
+      const orders = getPendingOrders();
+      if (orders.length === 0) {
+        pendingList.innerHTML = `<p class="muted-note">No pending orders.</p>`;
+        return;
+      }
+      pendingList.innerHTML = orders.map(o => {
+        const secsLeft = Math.max(0, Math.round((o.executesAt - Date.now()) / 1000));
+        return `
+          <div class="pending-row">
+            <span>${o.ticker} · ${o.quantity} shares · ${o.type.toUpperCase()} · executes in ${secsLeft}s</span>
+            <button class="btn secondary small" data-cancel="${o.id}">Cancel</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    pendingList.addEventListener("click", (e) => {
+      const id = e.target.getAttribute("data-cancel");
+      if (!id) return;
+      cancelOrder(Number(id)).then(result => {
+        if (result.success) {
+          refreshPending();
+        }
+      });
+    });
+
+    tickerSelect.addEventListener("change", updateEstimate);
+    qtyInput.addEventListener("input", updateEstimate);
+
+    submitBtn.addEventListener("click", () => {
+      const ticker = tickerSelect.value;
+      const quantity = qtyInput.value;
+      const price = currentPrice();
+
+      submitBtn.disabled = true;
+      msgBox.className = "msg";
+
+      submitBuyOrder({ ticker, quantity, price }).then(result => {
+        submitBtn.disabled = false;
+        if (result.success) {
+          showMsg("Order submitted — pending execution.", "success");
+          refreshPending();
+        } else {
+          showMsg(result.error, "error");
+        }
+      });
+    });
+
+    getStocks().then(data => {
+      stocks = data;
+      tickerSelect.innerHTML = stocks.map(s => `<option value="${s.ticker}">${s.ticker} — ${s.company}</option>`).join("");
+      updateEstimate();
+    }).catch(err => {
+      tickerSelect.innerHTML = `<option>Couldn't load stocks</option>`;
+    });
+
+    refreshCash();
+    refreshPending();
+    setInterval(() => { refreshCash(); refreshPending(); }, 1000);
+    } // end requireLogin()
+  </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockSim — Available Stocks</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="site-nav"></div>
+
+  <main class="wide">
+    <h1>Available Stocks</h1>
+    <p class="page-sub">Live prices update from the price generator once it's connected. Showing sample data for now.</p>
+
+    <div class="table-scroll">
+      <table class="stocks" id="stocks-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Company</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Volume</th>
+            <th>Market Cap</th>
+          </tr>
+        </thead>
+        <tbody id="stocks-body">
+          <tr><td colspan="6">Loading stocks…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel" id="detail-panel" style="margin-top: 20px; display: none;">
+      <h2 class="panel-title" id="detail-title">— Today</h2>
+      <div class="two-col">
+        <div class="stat-box">
+          <div class="stat-label">Open</div>
+          <div class="stat-value" id="detail-open">$0.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">High</div>
+          <div class="stat-value" id="detail-high">$0.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Low</div>
+          <div class="stat-value" id="detail-low">$0.00</div>
+        </div>
+      </div>
+      <p class="muted-note">Click any row in the table above to see that stock's opening price and daily range.</p>
+    </div>
+  </main>
+
+  <script src="js/components.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    renderNav("listing");
+
+    let loadedStocks = [];
+
+    function formatMoney(n) {
+      return "$" + n.toFixed(2);
+    }
+
+    function parseVolume(v) {
+      const num = parseFloat(v);
+      if (v.toUpperCase().includes("M")) return num * 1_000_000;
+      if (v.toUpperCase().includes("K")) return num * 1_000;
+      return num;
+    }
+
+    function showDetail(ticker) {
+      const s = loadedStocks.find(s => s.ticker === ticker);
+      if (!s) return;
+      document.getElementById("detail-panel").style.display = "block";
+      document.getElementById("detail-title").textContent = `${s.ticker} — Today`;
+      document.getElementById("detail-open").textContent = formatMoney(s.openingPrice);
+      document.getElementById("detail-high").textContent = formatMoney(s.dayHigh);
+      document.getElementById("detail-low").textContent = formatMoney(s.dayLow);
+    }
+
+    getStocks().then(stocks => {
+      loadedStocks = stocks;
+      const body = document.getElementById("stocks-body");
+      body.innerHTML = stocks.map(s => {
+        const changeClass = s.change >= 0 ? "change-up" : "change-down";
+        const changeSign = s.change >= 0 ? "+" : "";
+        const marketCap = formatMoney((s.price * parseVolume(s.volume)) / 1_000_000) + "M";
+        return `
+          <tr class="stock-row" data-ticker="${s.ticker}">
+            <td><strong>${s.ticker}</strong></td>
+            <td>${s.company}</td>
+            <td>${formatMoney(s.price)}</td>
+            <td class="${changeClass}">${changeSign}${s.change}%</td>
+            <td>${s.volume}</td>
+            <td>${marketCap}</td>
+          </tr>
+        `;
+      }).join("");
+
+      body.querySelectorAll(".stock-row").forEach(row => {
+        row.addEventListener("click", () => showDetail(row.dataset.ticker));
+      });
+
+      if (stocks.length > 0) showDetail(stocks[0].ticker);
+    }).catch(err => {
+      document.getElementById("stocks-body").innerHTML =
+        `<tr><td colspan="6">Couldn't load stocks: ${err.message}</td></tr>`;
+    });
+  </script>
+</body>
+</html>
