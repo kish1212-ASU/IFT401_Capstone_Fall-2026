@@ -39,8 +39,21 @@ Status codes used:
     409  conflict (market closed, insufficient funds, duplicate username)
     500  server error
 
-Auth is session or token based, TBD. Every route below marked (auth) requires
-a logged-in user. Routes marked (admin) require `role = 'admin'`.
+Auth is token based (JWT). `POST /auth/login` returns a `token`, and the
+client sends it on every request to a route marked (auth) or (admin):
+
+    Authorization: Bearer <token>
+
+Routes marked (auth) require a valid token. Routes marked (admin) require a
+valid token whose user has `role = 'admin'`. A missing, invalid, or expired
+token returns 401. A valid token with the wrong role returns 403.
+
+Server side, this is a small middleware that reads the header, verifies the
+token, and attaches the user to the request, plus a role check on admin
+routes. Signing secret lives in `.env`, never in the repo. Tokens expire after
+a few hours. There is no sessions table. The frontend runs on a different
+origin than the API, so tokens also avoid the cookie and CORS-credentials
+setup; the default `cors()` allows the Authorization header, but test it.
 
 ---
 
@@ -94,13 +107,24 @@ Never returns `password_hash`. New accounts start at 0.00 cash.
     { "username": "jdoe", "password": "..." }
 
     200
-    { "user_id": 3, "username": "jdoe", "role": "customer" }
+    {
+      "user_id": 3,
+      "username": "jdoe",
+      "role": "customer",
+      "token": "eyJhbGciOi..."
+    }
 
     401  bad credentials
+
+The token payload carries `user_id` and `role`. The frontend stores the token
+and sends it as a Bearer header on every (auth) and (admin) request.
 
 ### POST /auth/logout  (auth)
 
     204  no body
+
+Tokens are stateless, so the server does nothing here. The client discards
+its token. The route exists so the frontend has one call to make on logout.
 
 ### GET /users/me  (auth)
 
