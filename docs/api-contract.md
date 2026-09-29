@@ -146,9 +146,19 @@ Single stock, same object shape as above.
 
 ## Orders
 
+Orders are not executed instantly. `POST /orders` creates a pending order, and
+a background executor on the server fills it a few seconds later. That window
+is what lets a customer cancel before execution, per the business case.
+
+Statuses: `pending`, `executed`, `canceled`, `rejected`.
+
+Cash and shares are not reserved while an order is pending. Funds, shares,
+market hours, and price are all checked when the order executes, not when it
+is placed. If any check fails at that point the order becomes `rejected`.
+
 ### POST /orders  (auth)
 
-Buy or sell at market price. Executes immediately if the market is open.
+Place a buy or sell at market price.
 
     Request
     { "stock_id": 1, "order_type": "buy", "quantity": 10 }
@@ -160,29 +170,41 @@ Buy or sell at market price. Executes immediately if the market is open.
       "ticker": "ACME",
       "order_type": "buy",
       "quantity": 10,
-      "status": "executed",
-      "executed_price": "45.7500",
-      "total_amount": "457.50",
+      "status": "pending",
+      "executes_at": "2026-09-16T14:30:08.000Z",
+      "executed_price": null,
+      "total_amount": null,
+      "reject_reason": null,
       "created_at": "2026-09-16T14:30:00.000Z",
-      "executed_at": "2026-09-16T14:30:00.000Z"
+      "executed_at": null,
+      "canceled_at": null
     }
 
     400  quantity not a positive integer
     404  stock not found
     409  market closed
-    409  insufficient funds (buy)
-    409  insufficient shares (sell)
 
-Server re-checks market hours and price. Never trust a price sent by the
-client. The whole thing runs in one database transaction so the order, the
-holding, and the cash balance move together or not at all.
+Only the market-closed check happens at placement. Funds and shares are
+checked at execution. Never trust a price sent by the client, the price is
+read by the server when the order executes.
 
 ### GET /orders  (auth)
 
-Current user's orders, newest first. Optional `?status=pending`.
+Current user's orders, newest first. Optional `?status=pending` (or any of the
+four statuses).
 
     200
     [ { ...order object... } ]
+
+Clients can poll this or `GET /orders/:id` to see when a pending order
+becomes `executed` or `rejected`.
+
+### GET /orders/:id  (auth)
+
+Single order, same shape as above.
+
+    403  not your order
+    404  no such order
 
 ### DELETE /orders/:id  (auth)
 
@@ -193,7 +215,29 @@ Cancel a pending order. Business case requires this.
 
     403  not your order
     404  no such order
-    409  already executed or already canceled
+    409  already executed, rejected, or canceled
+
+### Order executor (server side, not an HTTP route)
+
+A timer inside the API (`setInterval`, every 1 to 2 seconds) finds pending
+orders where `executes_at <= now()` and processes each one in its own database
+transaction:
+
+1. Lock the row (`SELECT ... FOR UPDATE SKIP LOCKED`) so two runs never
+   process the same order.
+2. Re-check the market is open. If not, mark `rejected`, reason
+   `market closed`.
+3. Read the stock's current price.
+4. Buy: check cash covers quantity x price. Sell: check the user holds enough
+   shares. If not, mark `rejected` with reason `insufficient funds` or
+   `insufficient shares`.
+5. Otherwise write the transaction row, update the holding and cash balance,
+   and mark the order `executed` with `executed_price`, `total_amount`, and
+   `executed_at`.
+
+Cancel must be race-safe against the executor. `DELETE` should do
+`UPDATE orders SET status = 'canceled', canceled_at = now() WHERE order_id = $1
+AND status = 'pending'` and return 409 if zero rows changed.
 
 ---
 
