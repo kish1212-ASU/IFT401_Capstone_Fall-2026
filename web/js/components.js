@@ -10,8 +10,10 @@ const NAV_LINKS = [
   { id: "sell", label: "Sell", href: "sell.html" },
   { id: "cash", label: "Deposit/Withdraw", href: "deposit-withdraw.html" },
   { id: "portfolio", label: "Portfolio", href: "portfolio.html" },
+  { id: "transactions", label: "History", href: "transactions.html" },
   { id: "account", label: "Create Account", href: "create-account.html" },
   { id: "admin", label: "Admin: Create Stock", href: "create-stock.html" },
+  { id: "market", label: "Admin: Market Hours", href: "market-hours.html" },
 ];
 
 function renderNav(activeId) {
@@ -72,4 +74,30 @@ function requireLogin() {
     `;
   }
   return false;
+}
+
+// ---------------------------------------------------------
+// Same idea as requireLogin(), but for admin-only pages
+// (Create Stock, Market Hours) per the contract's (admin) tag.
+// Demo admin account: username "admin", password "admin123".
+// ---------------------------------------------------------
+function requireAdmin() {
+  const user = getCurrentUser();
+  if (!user) return requireLogin();
+
+  if (user.role !== "admin") {
+    const main = document.querySelector("main");
+    if (main) {
+      main.innerHTML = `
+        <h1>Admin Access Required</h1>
+        <p class="page-sub">This page is for administrators only.</p>
+        <div class="stub">
+          Logged in as <strong>${user.username}</strong>, a customer account.
+          Log in as an admin to continue.
+        </div>
+      `;
+    }
+    return false;
+  }
+  return true;
 }

@@ -39,6 +39,7 @@
   <script>
     renderNav("admin");
 
+    if (requireAdmin()) {
     const form = document.getElementById("stock-form");
     const msgBox = document.getElementById("stock-msg");
     const submitBtn = document.getElementById("submit-btn");
@@ -72,6 +73,7 @@
         }
       });
     });
+    } // end requireAdmin()
   </script>
 </body>
 </html>
