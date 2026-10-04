@@ -213,6 +213,16 @@ table.stocks tr:last-child td { border-bottom: none; }
   background: #f2f6fa;
 }
 
+.stock-row.selected {
+  background: #e8f0f7;
+}
+
+/* brief green/red flash on a price cell when it ticks up or down */
+@keyframes flash-up-anim   { from { background: #cdeed3; } to { background: transparent; } }
+@keyframes flash-down-anim { from { background: #f8d4d4; } to { background: transparent; } }
+td.flash-up   { animation: flash-up-anim 1.2s ease-out; }
+td.flash-down { animation: flash-down-anim 1.2s ease-out; }
+
 .change-up { color: var(--green); }
 .change-down { color: var(--red); }
 

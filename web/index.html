@@ -11,7 +11,7 @@
 
   <main class="wide">
     <h1>Available Stocks</h1>
-    <p class="page-sub">Live prices update from the price generator once it's connected. Showing sample data for now.</p>
+    <p class="page-sub">Prices refresh automatically every few seconds. Click a row for that stock's open, high and low.</p>
 
     <div class="table-scroll">
       <table class="stocks" id="stocks-table">
@@ -56,57 +56,81 @@
   <script>
     renderNav("listing");
 
+    const REFRESH_MS = 5000; // how often to re-ask the API for prices
+
     let loadedStocks = [];
+    let selectedTicker = null;
+    let lastPrices = {}; // ticker -> previous price, used to flash green/red
 
     function formatMoney(n) {
       return "$" + n.toFixed(2);
     }
 
-    function parseVolume(v) {
-      const num = parseFloat(v);
-      if (v.toUpperCase().includes("M")) return num * 1_000_000;
-      if (v.toUpperCase().includes("K")) return num * 1_000;
-      return num;
+    // marketCap comes straight from the API (volume x price, computed
+    // server-side) so we format it instead of re-deriving it.
+    function formatMarketCap(n) {
+      if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+      return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
     }
 
     function showDetail(ticker) {
       const s = loadedStocks.find(s => s.ticker === ticker);
       if (!s) return;
+      selectedTicker = ticker;
       document.getElementById("detail-panel").style.display = "block";
       document.getElementById("detail-title").textContent = `${s.ticker} — Today`;
       document.getElementById("detail-open").textContent = formatMoney(s.openingPrice);
       document.getElementById("detail-high").textContent = formatMoney(s.dayHigh);
       document.getElementById("detail-low").textContent = formatMoney(s.dayLow);
+      document.querySelectorAll(".stock-row").forEach(r =>
+        r.classList.toggle("selected", r.dataset.ticker === ticker)
+      );
     }
 
-    getStocks().then(stocks => {
+    function render(stocks) {
       loadedStocks = stocks;
       const body = document.getElementById("stocks-body");
       body.innerHTML = stocks.map(s => {
         const changeClass = s.change >= 0 ? "change-up" : "change-down";
         const changeSign = s.change >= 0 ? "+" : "";
-        const marketCap = formatMoney((s.price * parseVolume(s.volume)) / 1_000_000) + "M";
+        const prev = lastPrices[s.ticker];
+        const flash = prev === undefined || prev === s.price ? "" : (s.price > prev ? "flash-up" : "flash-down");
         return `
           <tr class="stock-row" data-ticker="${s.ticker}">
             <td><strong>${s.ticker}</strong></td>
             <td>${s.company}</td>
-            <td>${formatMoney(s.price)}</td>
+            <td class="${flash}">${formatMoney(s.price)}</td>
             <td class="${changeClass}">${changeSign}${s.change}%</td>
             <td>${s.volume}</td>
-            <td>${marketCap}</td>
+            <td>${formatMarketCap(s.marketCap)}</td>
           </tr>
         `;
       }).join("");
+      stocks.forEach(s => { lastPrices[s.ticker] = s.price; });
 
       body.querySelectorAll(".stock-row").forEach(row => {
         row.addEventListener("click", () => showDetail(row.dataset.ticker));
       });
 
-      if (stocks.length > 0) showDetail(stocks[0].ticker);
-    }).catch(err => {
-      document.getElementById("stocks-body").innerHTML =
-        `<tr><td colspan="6">Couldn't load stocks: ${err.message}</td></tr>`;
-    });
+      // keep whatever stock the user had selected across refreshes
+      const keep = stocks.some(s => s.ticker === selectedTicker) ? selectedTicker : (stocks[0] && stocks[0].ticker);
+      if (keep) showDetail(keep);
+    }
+
+    function loadStocks() {
+      getStocks().then(render).catch(err => {
+        // only show an error if we've never loaded anything; otherwise
+        // quietly keep the last good data until the next refresh works
+        if (loadedStocks.length === 0) {
+          document.getElementById("stocks-body").innerHTML =
+            `<tr><td colspan="6">Couldn't load stocks: ${err.message}. Is the API running?</td></tr>`;
+        }
+      });
+    }
+
+    loadStocks();
+    setInterval(loadStocks, REFRESH_MS);
   </script>
 </body>
 </html>

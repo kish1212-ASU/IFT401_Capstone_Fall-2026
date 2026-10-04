@@ -79,7 +79,8 @@ function requireLogin() {
 // ---------------------------------------------------------
 // Same idea as requireLogin(), but for admin-only pages
 // (Create Stock, Market Hours) per the contract's (admin) tag.
-// Demo admin account: username "admin", password "admin123".
+// Admin accounts are real now: the user's role comes from the database
+// (a local test admin can be made with one SQL UPDATE on users.role).
 // ---------------------------------------------------------
 function requireAdmin() {
   const user = getCurrentUser();
@@ -92,7 +93,7 @@ function requireAdmin() {
         <h1>Admin Access Required</h1>
         <p class="page-sub">This page is for administrators only.</p>
         <div class="stub">
-          Logged in as <strong>${user.username}</strong>, a customer account.
+          Logged in as <strong>${user.username}</strong>, a ${user.role} account.
           Log in as an admin to continue.
         </div>
       `;

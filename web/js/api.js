@@ -2,35 +2,25 @@
 // api.js — THE ONLY FILE THAT SHOULD CHANGE WHEN ALEX'S REAL
 // BACKEND IS READY.
 //
-// STATUS (per Kyle's docs/api-contract.md, Sept 16):
-//   /health and /stocks are REAL. Everything else below is
-//   SPEC ONLY — Kyle was explicit these routes don't exist on
-//   the server yet, so this file still fakes them, but now
-//   matches his exact field names and response shapes so the
-//   eventual swap is close to copy-paste instead of guessing.
+// STATUS (as of Oct 1, after PRs #2, #3, #4 merged into main):
+//   REAL:  GET /health, GET /stocks, POST /users (create account),
+//          POST /auth/login, POST /auth/logout, GET /users/me
+//   STILL MOCK (routes not built yet): POST /stocks (admin), market
+//          hours, orders, cash deposit/withdraw, portfolio, transactions.
+//          Those mocks use the exact field names from
+//          docs/api-contract.md so each swap is small.
+//
+//   Auth is a JWT. Login returns { token, user_id, username, role }.
+//   The token goes on every (auth) request as
+//   `Authorization: Bearer <token>` — use authFetch() below, which
+//   adds it for you. Tokens expire after 4 hours.
 //
 //   Account creation is POST /users (not /accounts — Kyle is
 //   keeping "user" the person separate from "account" the cash
 //   account in the schema).
-//
-//   IMPORTANT: almost every route other than /stocks and /users
-//   requires a logged-in session per the contract (auth).
-//   Nobody has built a login page yet. Buy/Sell/Deposit/Withdraw
-//   will need one to work for real, even after Kyle/Alex build
-//   the routes themselves.
 // ===========================================================
 
 const API_BASE = "http://localhost:3000";
-
-// Fake "existing accounts" so login and the uniqueness check have
-// something to check against. Delete this once /users is real.
-// NOTE: storing plaintext password here only because this is a
-// fake in-browser mock. A real backend hashes passwords and would
-// never store or compare them like this.
-const _mockAccounts = [
-  { username: "jsmith", email: "jsmith@example.com", password: "password123", fullName: "Jane Smith", role: "customer" },
-  { username: "admin", email: "admin@stocksim.local", password: "admin123", fullName: "System Admin", role: "admin" },
-];
 
 // Small helper so the still-mocked functions "feel" like a real
 // network call (takes a beat, can fail) instead of resolving instantly.
@@ -47,61 +37,119 @@ function _formatVolume(n) {
 }
 
 // ===========================================================
-// MOCK SESSION (Login / Logout / "who's logged in")
+// SESSION (Login / Logout / "who's logged in")  — REAL as of PR #3
 //
-// Stored in localStorage (not just a JS variable) specifically so
-// it survives navigating between pages — each HTML page is its own
-// separate JS context, so without this the nav bar would "forget"
-// you were logged in the second you clicked to a different page.
+// POST /auth/login returns { token, user_id, username, role }. We keep
+// all of that in localStorage so it survives navigating between pages
+// (each HTML page is its own separate JS context, so a plain variable
+// would be forgotten on every click).
 //
-// TODO: once POST /auth/login is real, the contract says auth is
-// "session or token based, TBD" — this localStorage approach will
-// likely get replaced with a real cookie/token then, not stay as-is.
+// SECURITY NOTE: localStorage is readable by any script on the page.
+// That's an accepted tradeoff for this class project (Kyle's contract
+// chose bearer tokens on purpose), but never paste a token into chat,
+// Discord, or a screenshot.
+//
+// The token is a JWT that expires after 4 hours. getCurrentUser()
+// checks the expiry itself and quietly logs you out when it passes,
+// so the nav never claims you're logged in with a dead token.
 // ===========================================================
 
-const SESSION_KEY = "stocksim_mock_session";
+const SESSION_KEY = "stocksim_session";
+
+// Reads the "exp" (expiry, in seconds) out of a JWT without verifying
+// it — verifying is the server's job, we only want to know if it's
+// obviously expired so we can stop showing a stale "logged in".
+function _tokenExpired(token) {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const { exp } = JSON.parse(atob(payload));
+    return typeof exp === "number" && exp * 1000 <= Date.now();
+  } catch (e) {
+    return true; // unreadable token — treat as expired
+  }
+}
 
 function getCurrentUser() {
   const raw = localStorage.getItem(SESSION_KEY);
-  return raw ? JSON.parse(raw) : null;
-}
-
-function _setCurrentUser(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-}
-
-// ---------------- Login (SPEC ONLY — POST /auth/login) ----------------
-// Contract request body: { username, password }
-// Contract 200 response: { user_id, username, role }
-// Contract 401: { "error": "..." } on bad credentials
-//
-// TODO: once POST /auth/login is real, swap this for:
-//   return fetch(`${API_BASE}/auth/login`, {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ username, password }),
-//   }).then(res => res.json().then(body => {
-//     if (res.ok) _setCurrentUser(body);
-//     return { success: res.ok, error: res.ok ? null : body.error };
-//   }));
-function login({ username, password }) {
-  const account = _mockAccounts.find(
-    a => a.username === username && a.password === password
-  );
-  if (!account) {
-    return _fakeDelay({ success: false, error: "Incorrect username or password." });
+  if (!raw) return null;
+  try {
+    const session = JSON.parse(raw);
+    if (!session.token || _tokenExpired(session.token)) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return session; // { user_id, username, role, token }
+  } catch (e) {
+    localStorage.removeItem(SESSION_KEY);
+    return null;
   }
-  const user = { user_id: _mockAccounts.indexOf(account) + 1, username: account.username, role: account.role || "customer" };
-  _setCurrentUser(user);
-  return _fakeDelay({ success: true, user });
 }
 
-// ---------------- Logout (SPEC ONLY — POST /auth/logout) ----------------
-// TODO: once real, also call POST /auth/logout so the server drops
-// the session, then still clear the local copy below either way.
+function _setSession(session) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+// Same as fetch(), but adds the Authorization header when logged in.
+// Use this for every route the contract marks (auth) or (admin).
+function authFetch(path, options = {}) {
+  const user = getCurrentUser();
+  const headers = { ...(options.headers || {}) };
+  if (user) headers["Authorization"] = `Bearer ${user.token}`;
+  return fetch(`${API_BASE}${path}`, { ...options, headers });
+}
+
+// ---------------- Login (REAL — POST /auth/login) ----------------
+// 200: { token, user_id, username, role }
+// 400: { error } missing field    401: { error } bad credentials
+function login({ username, password }) {
+  return fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  })
+    .then(res =>
+      res.json().then(body => {
+        if (!res.ok) return { success: false, error: body.error || "Login failed." };
+        _setSession({
+          user_id: body.user_id,
+          username: body.username,
+          role: body.role,
+          token: body.token,
+        });
+        return { success: true, user: getCurrentUser() };
+      })
+    )
+    .catch(() => ({
+      success: false,
+      error: "Couldn't reach the server. Is the API running on port 3000?",
+    }));
+}
+
+// ---------------- Logout (REAL — POST /auth/logout) ----------------
+// Tokens are stateless, so the server only answers 204. The real
+// logout is deleting our copy, which we do no matter what the
+// server says (even if the API is down).
 function logout() {
-  localStorage.removeItem(SESSION_KEY);
-  return _fakeDelay({ success: true });
+  return authFetch("/auth/logout", { method: "POST" })
+    .catch(() => null)
+    .then(() => {
+      localStorage.removeItem(SESSION_KEY);
+      return { success: true };
+    });
+}
+
+// ---------------- My profile (REAL — GET /users/me, auth) ----------------
+// Same shape as POST /users, including cash_balance (a string).
+// Not shown anywhere yet; it's here for when the cash/portfolio
+// routes land, and it's a handy way to check the token works.
+function getMyProfile() {
+  return authFetch("/users/me").then(res =>
+    res.json().then(body => ({
+      success: res.ok,
+      error: res.ok ? null : body.error,
+      user: res.ok ? body : null,
+    }))
+  );
 }
 
 // ---------------- Stock Listing (REAL) ----------------
@@ -169,13 +217,18 @@ function createAccount({ fullName, username, email, password }) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, email, full_name: fullName, password }),
-  }).then(res =>
-    res.json().then(body => ({
-      success: res.ok,
-      error: res.ok ? null : body.error,
-      user: res.ok ? body : null,
-    }))
-  );
+  })
+    .then(res =>
+      res.json().then(body => ({
+        success: res.ok,
+        error: res.ok ? null : body.error,
+        user: res.ok ? body : null,
+      }))
+    )
+    .catch(() => ({
+      success: false,
+      error: "Couldn't reach the server. Is the API running on port 3000?",
+    }));
 }
 
 // ---------------- Create Stock (SPEC ONLY — POST /stocks, admin) ----------------
