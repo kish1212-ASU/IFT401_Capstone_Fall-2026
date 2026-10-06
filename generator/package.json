@@ -1,0 +1,17 @@
+{
+  "name": "generator",
+  "version": "1.0.0",
+  "description": "Random stock price generator for the IFT 401 Stock Trading System",
+  "main": "generator.js",
+  "scripts": {
+    "start": "node generator.js",
+    "once": "node generator.js --once",
+    "test": "node test-price-model.js"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "pg": "^8.23.0"
+  }
+}
