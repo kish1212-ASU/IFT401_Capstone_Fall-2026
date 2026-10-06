@@ -132,13 +132,26 @@
       });
     });
 
-    getStocks().then(data => {
-      stocks = data;
-      tickerSelect.innerHTML = stocks.map(s => `<option value="${s.ticker}">${s.ticker} — ${s.company}</option>`).join("");
-      updateEstimate();
-    }).catch(err => {
-      tickerSelect.innerHTML = `<option>Couldn't load stocks</option>`;
-    });
+    // Load the stock list, then re-fetch every 5s so the price you see
+    // (and the price an order is placed at) follows the price generator.
+    // The dropdown is only rebuilt the first time, so a refresh never
+    // resets which stock you've picked or what you've typed.
+    function loadStocks() {
+      getStocks().then(data => {
+        const firstLoad = stocks.length === 0;
+        stocks = data;
+        if (firstLoad) {
+          tickerSelect.innerHTML = stocks.map(s => `<option value="${s.ticker}">${s.ticker} — ${s.company}</option>`).join("");
+        }
+        updateEstimate();
+      }).catch(err => {
+        if (stocks.length === 0) {
+          tickerSelect.innerHTML = `<option>Couldn't load stocks</option>`;
+        }
+      });
+    }
+    loadStocks();
+    setInterval(loadStocks, 5000);
 
     refreshCash();
     refreshPending();
