@@ -15,6 +15,10 @@ const {
   requireAuth
 } = require("./auth");
 
+const { marketRouter } = require("./marketRoutes");
+const { ordersRouter } = require("./orderRoutes");
+const { startExecutor } = require("./executor");
+
 const app = express();
 
 // Locally ALLOWED_ORIGIN is unset, so CORS is permissive for dev.
@@ -163,8 +167,12 @@ app.get("/users/me", requireAuth, async (req, res) => {
   }
 });
 
+app.use("/market", marketRouter);
+app.use("/orders", ordersRouter);
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("API listening on " + PORT);
+  startExecutor();
 });

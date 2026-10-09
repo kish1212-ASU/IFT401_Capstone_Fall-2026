@@ -40,7 +40,20 @@ function requireAuth(req, res, next) {
   }
 }
 
+// Use after requireAuth on admin-only routes. A valid token with the wrong
+// role is 403, not 401.
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({
+      error: "Admin access required"
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   createToken,
-  requireAuth
+  requireAuth,
+  requireAdmin
 };
