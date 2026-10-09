@@ -97,8 +97,10 @@ CREATE TABLE orders (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     executed_at     TIMESTAMPTZ,
     canceled_at     TIMESTAMPTZ,
+    executes_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reject_reason   VARCHAR(100),
     CONSTRAINT chk_orders_type   CHECK (order_type IN ('buy','sell')),
-    CONSTRAINT chk_orders_status CHECK (status IN ('pending','executed','canceled')),
+    CONSTRAINT chk_orders_status CHECK (status IN ('pending','executed','canceled','rejected')),
     CONSTRAINT chk_orders_qty    CHECK (quantity > 0)
 );
 
