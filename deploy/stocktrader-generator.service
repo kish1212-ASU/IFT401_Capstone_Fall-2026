@@ -1,0 +1,14 @@
+[Unit]
+Description=Stock Price Generator
+After=network-online.target
+
+[Service]
+User=ec2-user
+WorkingDirectory=/home/ec2-user/IFT401_Capstone_Fall-2026/generator
+Environment=DOTENV_CONFIG_PATH=/home/ec2-user/IFT401_Capstone_Fall-2026/.env
+ExecStart=/usr/bin/node generator.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
