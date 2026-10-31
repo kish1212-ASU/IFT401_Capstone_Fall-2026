@@ -20,7 +20,9 @@
 //   account in the schema).
 // ===========================================================
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = ["", "localhost", "127.0.0.1"].includes(location.hostname)
+  ? "http://localhost:3000"
+  : "/api";
 
 // Small helper so the still-mocked functions "feel" like a real
 // network call (takes a beat, can fail) instead of resolving instantly.
