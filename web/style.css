@@ -401,3 +401,46 @@ button.btn.small {
     white-space: nowrap;
   }
 }
+
+
+/* ---------- Orders lists (Buy / Sell) ---------- */
+.order-row {
+  padding: 8px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--border);
+}
+.order-row:last-child { border-bottom: none; }
+.order-executed { color: var(--green); }
+.order-rejected { color: var(--red); }
+.order-canceled { color: var(--muted); }
+.muted-note.warn { color: var(--red); }
+
+/* ---------- Stocks page: market badge + demo tag ---------- */
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.title-row h1 { margin: 0 0 4px; }
+.market-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+}
+.market-badge:empty { display: none; }
+.market-badge.open { background: #eaf6ec; color: var(--green); }
+.market-badge.closed { background: #fdecec; color: var(--red); }
+.demo-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}

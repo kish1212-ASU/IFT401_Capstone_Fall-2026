@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StockSim — Market Hours (Admin)</title>
+  <title>StockSim — Market Hours</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <main>
     <h1>Market Hours &amp; Schedule</h1>
-    <p class="page-sub">Admin only — controls when customers can place trades.</p>
+    <p class="page-sub">Admin only — controls when customers can place trades. The market trades on weekdays only.</p>
 
     <div id="market-content">
       <div class="panel">
@@ -24,13 +24,13 @@
         <input type="time" id="marketClose">
 
         <label for="timezone">Timezone</label>
-        <input type="text" id="timezone">
+        <input type="text" id="timezone" placeholder="America/New_York">
 
         <label>Trading Days</label>
         <div class="tabs" id="days-row" style="margin: 8px 0 16px;"></div>
 
         <label for="holidays">Holidays (comma-separated dates, YYYY-MM-DD)</label>
-        <input type="text" id="holidays">
+        <input type="text" id="holidays" placeholder="2026-11-26, 2026-12-25">
 
         <div id="market-msg" class="msg"></div>
 
@@ -45,9 +45,8 @@
     renderNav("market");
 
     if (requireAdmin()) {
-      const DAY_NAMES = [
-        [1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"],
-      ];
+      // The server only accepts weekdays: 1 = Monday ... 5 = Friday.
+      const DAY_NAMES = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"]];
       let selectedDays = [];
 
       const statusBox = document.getElementById("status-box");
@@ -64,12 +63,11 @@
         msgBox.className = `msg show ${type}`;
       }
 
-      function renderStatus() {
-        const status = getMarketStatus();
-        statusBox.textContent = status.isOpen
-          ? "Market is currently OPEN (based on your computer's local clock)"
-          : "Market is currently CLOSED (based on your computer's local clock)";
-        statusBox.style.color = status.isOpen ? "#1a7f37" : "#b00020";
+      function renderStatus(m) {
+        statusBox.textContent = m.isOpen
+          ? `Market is currently OPEN (decided by the server, using ${m.timezone} time)`
+          : `Market is currently CLOSED (decided by the server, using ${m.timezone} time)`;
+        statusBox.style.color = m.isOpen ? "#1a7f37" : "#b00020";
       }
 
       function renderDayButtons() {
@@ -87,15 +85,28 @@
         });
       }
 
+      // Fill the form from the server. Only done on load and after a save,
+      // never on the 5-second status check, so it can't wipe what you're typing.
       function loadCurrent() {
-        const m = getMarketStatus();
-        openInput.value = m.marketOpen;
-        closeInput.value = m.marketClose;
-        tzInput.value = m.timezone;
-        holidaysInput.value = m.holidays.join(", ");
-        selectedDays = [...m.tradingDays];
-        renderDayButtons();
-        renderStatus();
+        getMarketStatus().then(res => {
+          if (!res.success) {
+            statusBox.textContent = "Couldn't load market settings: " + res.error;
+            statusBox.style.color = "#b00020";
+            return;
+          }
+          const m = res.market;
+          openInput.value = m.marketOpen;
+          closeInput.value = m.marketClose;
+          tzInput.value = m.timezone;
+          holidaysInput.value = m.holidays.join(", ");
+          selectedDays = [...m.tradingDays];
+          renderDayButtons();
+          renderStatus(m);
+        });
+      }
+
+      function refreshStatus() {
+        getMarketStatus().then(res => { if (res.success) renderStatus(res.market); });
       }
 
       submitBtn.addEventListener("click", () => {
@@ -107,14 +118,14 @@
         updateMarketHours({
           marketOpen: openInput.value,
           marketClose: closeInput.value,
-          timezone: tzInput.value,
+          timezone: tzInput.value.trim(),
           tradingDays: selectedDays,
           holidays,
         }).then(result => {
           submitBtn.disabled = false;
           if (result.success) {
             showMsg("Market hours updated.", "success");
-            renderStatus();
+            loadCurrent();
           } else {
             showMsg(result.error, "error");
           }
@@ -122,7 +133,7 @@
       });
 
       loadCurrent();
-      setInterval(renderStatus, 5000);
+      setInterval(refreshStatus, 5000);
     }
   </script>
 </body>

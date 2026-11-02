@@ -27,6 +27,11 @@
         <label for="initialPrice">Initial Price ($)</label>
         <input type="number" id="initialPrice" min="0.01" step="0.01" required>
 
+        <p class="muted-note" id="demo-note" style="display: none;">
+          Demo mode: the server's create-stock route isn't built yet, so a stock made here appears
+          only in this browser (marked "demo" on the Stocks page) and can't be traded.
+        </p>
+
         <div id="stock-msg" class="msg"></div>
 
         <button type="submit" class="btn" id="submit-btn">Create Stock</button>
@@ -38,6 +43,7 @@
   <script src="js/api.js"></script>
   <script>
     renderNav("admin");
+    if (!REAL_ROUTES.createStock) document.getElementById("demo-note").style.display = "block";
 
     if (requireAdmin()) {
     const form = document.getElementById("stock-form");

@@ -13,39 +13,42 @@
     <h1>My Portfolio</h1>
     <p class="page-sub">Your current holdings and cash balance.</p>
 
-    <div id="portfolio-content">
-      <div class="two-col">
-        <div class="stat-box">
-          <div class="stat-label">Cash Balance</div>
-          <div class="stat-value" id="cash-value">$0.00</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Holdings Value</div>
-          <div class="stat-value" id="holdings-value">$0.00</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Total Value</div>
-          <div class="stat-value" id="total-value">$0.00</div>
-        </div>
+    <div class="two-col">
+      <div class="stat-box">
+        <div class="stat-label">Cash Balance</div>
+        <div class="stat-value" id="cash-value">—</div>
       </div>
-
-      <div class="table-scroll" style="margin-top: 20px;">
-        <table class="stocks" id="holdings-table">
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th>Company</th>
-              <th>Shares Owned</th>
-              <th>Current Price</th>
-              <th>Market Value</th>
-            </tr>
-          </thead>
-          <tbody id="holdings-body">
-            <tr><td colspan="5">Loading portfolio…</td></tr>
-          </tbody>
-        </table>
+      <div class="stat-box">
+        <div class="stat-label">Holdings Value</div>
+        <div class="stat-value" id="holdings-value">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Value</div>
+        <div class="stat-value" id="total-value">—</div>
       </div>
     </div>
+
+    <div class="table-scroll" style="margin-top: 20px;">
+      <table class="stocks" id="holdings-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Company</th>
+            <th>Shares Owned</th>
+            <th>Avg Cost</th>
+            <th>Current Price</th>
+            <th>Market Value</th>
+            <th>Gain / Loss</th>
+          </tr>
+        </thead>
+        <tbody id="holdings-body">
+          <tr><td colspan="7">Loading portfolio…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted-note" id="source-note" style="display: none;">
+      Holdings are calculated from your executed orders. They'll come straight from the server once its portfolio route is built.
+    </p>
   </main>
 
   <script src="js/components.js"></script>
@@ -54,38 +57,45 @@
     renderNav("portfolio");
 
     if (requireLogin()) {
-      function formatMoney(n) {
-        return "$" + n.toFixed(2);
+      function gainHtml(n) {
+        const cls = n >= 0 ? "change-up" : "change-down";
+        const sign = n >= 0 ? "+" : "-";
+        return `<span class="${cls}">${sign}$${Math.abs(n).toFixed(2)}</span>`;
       }
 
       function render() {
         getPortfolioSummary().then(p => {
-          document.getElementById("cash-value").textContent = formatMoney(p.cashBalance);
-          document.getElementById("holdings-value").textContent = formatMoney(p.holdingsValue);
-          document.getElementById("total-value").textContent = formatMoney(p.totalValue);
-
           const body = document.getElementById("holdings-body");
+          if (!p.success) {
+            body.innerHTML = `<tr><td colspan="7">Couldn't load portfolio: ${escapeHtml(p.error)}</td></tr>`;
+            return;
+          }
+
+          document.getElementById("cash-value").textContent = fmtMoney(p.cashBalance);
+          document.getElementById("holdings-value").textContent = fmtMoney(p.holdingsValue);
+          document.getElementById("total-value").textContent = fmtMoney(p.totalValue);
+          document.getElementById("source-note").style.display = p.source === "orders" ? "block" : "none";
+
           if (p.holdings.length === 0) {
-            body.innerHTML = `<tr><td colspan="5">You don't own any shares yet. Visit the Buy page to get started.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7">You don't own any shares yet. Visit the Buy page to get started.</td></tr>`;
             return;
           }
           body.innerHTML = p.holdings.map(h => `
             <tr>
-              <td><strong>${h.ticker}</strong></td>
-              <td>${h.company}</td>
+              <td><strong>${escapeHtml(h.ticker)}</strong></td>
+              <td>${escapeHtml(h.company)}</td>
               <td>${h.quantity}</td>
-              <td>${formatMoney(h.price)}</td>
-              <td>${formatMoney(h.marketValue)}</td>
+              <td>${fmtMoney(h.avgCostBasis)}</td>
+              <td>${fmtMoney(h.price)}</td>
+              <td>${fmtMoney(h.marketValue)}</td>
+              <td>${gainHtml(h.gainLoss)}</td>
             </tr>
           `).join("");
-        }).catch(err => {
-          document.getElementById("holdings-body").innerHTML =
-            `<tr><td colspan="5">Couldn't load portfolio: ${err.message}</td></tr>`;
         });
       }
 
       render();
-      setInterval(render, 2000); // catches pending orders executing, and live price changes
+      setInterval(render, 3000); // picks up filled orders and price changes
     }
   </script>
 </body>

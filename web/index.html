@@ -10,7 +10,10 @@
   <div id="site-nav"></div>
 
   <main class="wide">
-    <h1>Available Stocks</h1>
+    <div class="title-row">
+      <h1>Available Stocks</h1>
+      <span id="market-badge" class="market-badge"></span>
+    </div>
     <p class="page-sub">Prices refresh automatically every few seconds. Click a row for that stock's open, high and low.</p>
 
     <div class="table-scroll">
@@ -98,8 +101,8 @@
         const flash = prev === undefined || prev === s.price ? "" : (s.price > prev ? "flash-up" : "flash-down");
         return `
           <tr class="stock-row" data-ticker="${s.ticker}">
-            <td><strong>${s.ticker}</strong></td>
-            <td>${s.company}</td>
+            <td><strong>${escapeHtml(s.ticker)}</strong>${s.isDemo ? ' <span class="demo-tag">demo</span>' : ""}</td>
+            <td>${escapeHtml(s.company)}</td>
             <td class="${flash}">${formatMoney(s.price)}</td>
             <td class="${changeClass}">${changeSign}${s.change}%</td>
             <td>${s.volume}</td>
@@ -118,8 +121,21 @@
       if (keep) showDetail(keep);
     }
 
+    // Open/closed badge. The server decides; the page only displays it.
+    function loadMarket() {
+      getMarketStatus().then(res => {
+        const badge = document.getElementById("market-badge");
+        if (!res.success) { badge.textContent = ""; return; }
+        const m = res.market;
+        badge.textContent = m.isOpen ? "● Market Open" : "● Market Closed";
+        badge.className = "market-badge " + (m.isOpen ? "open" : "closed");
+        badge.title = `${m.marketOpen}–${m.marketClose} ${m.timezone}`;
+      });
+    }
+
     function loadStocks() {
-      getStocks().then(render).catch(err => {
+      loadMarket();
+      getStocks({ includeDemo: true }).then(render).catch(err => {
         // only show an error if we've never loaded anything; otherwise
         // quietly keep the last good data until the next refresh works
         if (loadedStocks.length === 0) {

@@ -14,7 +14,12 @@
     <p class="page-sub">Deposit or withdraw from your cash account.</p>
 
     <div class="panel">
-      <div class="est-box" id="balance-box">Current Cash Balance: $0.00</div>
+      <div class="stub" id="cash-notice" style="display: none; margin-bottom: 16px; padding: 16px;">
+        Deposits and withdrawals aren't available yet — the server route hasn't been built.
+        The balance below is your real account balance.
+      </div>
+
+      <div class="est-box" id="balance-box">Current Cash Balance: —</div>
 
       <div class="tabs">
         <button type="button" class="tab-btn active" id="tab-deposit">Deposit</button>
@@ -26,7 +31,7 @@
 
       <div id="cash-msg" class="msg"></div>
 
-      <button type="button" class="btn" id="submit-btn">Submit</button>
+      <button type="button" class="btn" id="submit-btn">Deposit</button>
     </div>
   </main>
 
@@ -36,61 +41,71 @@
     renderNav("cash");
 
     if (requireLogin()) {
-    let mode = "deposit"; // or "withdraw"
-    const balanceBox = document.getElementById("balance-box");
-    const tabDeposit = document.getElementById("tab-deposit");
-    const tabWithdraw = document.getElementById("tab-withdraw");
-    const amountLabel = document.getElementById("amount-label");
-    const amountInput = document.getElementById("amount");
-    const msgBox = document.getElementById("cash-msg");
-    const submitBtn = document.getElementById("submit-btn");
+      let mode = "deposit"; // or "withdraw"
+      const balanceBox = document.getElementById("balance-box");
+      const notice = document.getElementById("cash-notice");
+      const tabDeposit = document.getElementById("tab-deposit");
+      const tabWithdraw = document.getElementById("tab-withdraw");
+      const amountLabel = document.getElementById("amount-label");
+      const amountInput = document.getElementById("amount");
+      const msgBox = document.getElementById("cash-msg");
+      const submitBtn = document.getElementById("submit-btn");
 
-    function showMsg(text, type) {
-      msgBox.textContent = text;
-      msgBox.className = `msg show ${type}`;
-    }
+      function showMsg(text, type) {
+        msgBox.textContent = text;
+        msgBox.className = `msg show ${type}`;
+      }
 
-    function refreshBalance() {
-      balanceBox.textContent = "Current Cash Balance: $" + getMockCashBalance().toFixed(2);
-    }
+      function refreshBalance() {
+        getCashBalance().then(value => {
+          balanceBox.textContent = "Current Cash Balance: " + (value === null ? "unavailable" : fmtMoney(value));
+        });
+      }
 
-    function setMode(newMode) {
-      mode = newMode;
-      tabDeposit.classList.toggle("active", mode === "deposit");
-      tabWithdraw.classList.toggle("active", mode === "withdraw");
-      amountLabel.textContent = (mode === "deposit" ? "Deposit" : "Withdrawal") + " Amount ($)";
-      submitBtn.textContent = mode === "deposit" ? "Deposit" : "Withdraw";
-      msgBox.className = "msg";
-      amountInput.value = "";
-    }
+      function setMode(newMode) {
+        mode = newMode;
+        tabDeposit.classList.toggle("active", mode === "deposit");
+        tabWithdraw.classList.toggle("active", mode === "withdraw");
+        amountLabel.textContent = (mode === "deposit" ? "Deposit" : "Withdrawal") + " Amount ($)";
+        submitBtn.textContent = mode === "deposit" ? "Deposit" : "Withdraw";
+        msgBox.className = "msg";
+        amountInput.value = "";
+      }
 
-    tabDeposit.addEventListener("click", () => setMode("deposit"));
-    tabWithdraw.addEventListener("click", () => setMode("withdraw"));
+      tabDeposit.addEventListener("click", () => setMode("deposit"));
+      tabWithdraw.addEventListener("click", () => setMode("withdraw"));
 
-    submitBtn.addEventListener("click", () => {
-      const amount = amountInput.value;
-      submitBtn.disabled = true;
-      msgBox.className = "msg";
+      submitBtn.addEventListener("click", () => {
+        submitBtn.disabled = true;
+        msgBox.className = "msg";
 
-      const action = mode === "deposit" ? depositCash(amount) : withdrawCash(amount);
+        const action = mode === "deposit" ? depositCash(amountInput.value) : withdrawCash(amountInput.value);
 
-      action.then(result => {
-        submitBtn.disabled = false;
-        if (result.success) {
-          showMsg(
-            (mode === "deposit" ? "Deposit" : "Withdrawal") + " successful. New balance: $" + result.newBalance.toFixed(2),
-            "success"
-          );
-          amountInput.value = "";
-          refreshBalance();
-        } else {
-          showMsg(result.error, "error");
-        }
+        action.then(result => {
+          submitBtn.disabled = false;
+          if (result.success) {
+            showMsg(
+              (mode === "deposit" ? "Deposit" : "Withdrawal") + " successful. New balance: " + fmtMoney(result.newBalance),
+              "success"
+            );
+            amountInput.value = "";
+            refreshBalance();
+          } else {
+            showMsg(result.error, "error");
+          }
+        });
       });
-    });
 
-    refreshBalance();
-    } // end requireLogin()
+      // Until the server's cash routes exist, show the real balance but
+      // switch the form off, so nobody "deposits" money that isn't real.
+      if (!REAL_ROUTES.cash) {
+        notice.style.display = "block";
+        [tabDeposit, tabWithdraw, amountInput, submitBtn].forEach(el => { el.disabled = true; });
+      }
+
+      refreshBalance();
+      setInterval(refreshBalance, 5000);
+    }
   </script>
 </body>
 </html>
