@@ -18,5 +18,5 @@ INSERT INTO stocks (ticker, company_name, initial_price, current_price,
 
 -- Test accounts. Password hashes are placeholders until auth is built.
 INSERT INTO users (username, email, full_name, password_hash, role, cash_balance) VALUES
-  ('admin',   'admin@example.com',   'System Administrator', 'PLACEHOLDER_HASH', 'admin',    0.00),
-  ('testuser','customer@example.com','Test Customer',        'PLACEHOLDER_HASH', 'customer', 10000.00);
+  ('admin',   'admin@example.com',   'System Administrator', '$2b$10$2Pgizs63X38MHi94WaCILObHbwQ9yleAg8JK1sSCMk.Z/GvVTIml2', 'admin',    0.00),
+  ('testuser','customer@example.com','Test Customer',        '$2b$10$2Pgizs63X38MHi94WaCILObHbwQ9yleAg8JK1sSCMk.Z/GvVTIml2', 'customer', 10000.00);
