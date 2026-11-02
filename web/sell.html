@@ -29,7 +29,7 @@
       </div>
 
       <label for="quantity">Quantity to Sell</label>
-      <input type="number" id="quantity" min="1" value="1">
+      <input type="number" id="quantity" min="1" step="1" value="1">
 
       <div class="est-box" id="est-box">Estimated Proceeds: $0.00</div>
 
@@ -43,13 +43,17 @@
       <div id="pending-list">
         <p class="muted-note">No pending orders.</p>
       </div>
-      <p class="muted-note">Orders execute automatically a few seconds after you submit them — cancel before then if you change your mind.</p>
+      <p class="muted-note">An order fills a few seconds after you place it, at the price at that moment. Cancel before then if you change your mind. Your shares are checked when the order fills.</p>
     </div>
 
-    <div class="stub" style="margin-top: 20px;">
-      Note: this demo starts you with $0 shares owned of everything.
-      Buy something on the Buy page first if you want to test selling it.
+    <div class="panel" style="margin-top: 20px;">
+      <h2 class="panel-title">Recent Orders</h2>
+      <div id="recent-list">
+        <p class="muted-note">No completed orders yet.</p>
+      </div>
     </div>
+
+    <p class="muted-note" style="margin-top: 16px;">You can only sell shares you own. Buy something on the Buy page first if you want to try selling.</p>
   </main>
 
   <script src="js/components.js"></script>
@@ -58,109 +62,107 @@
     renderNav("sell");
 
     if (requireLogin()) {
-    let stocks = [];
-    const tickerSelect = document.getElementById("ticker");
-    const sharesBox = document.getElementById("shares-owned");
-    const priceBox = document.getElementById("current-price");
-    const qtyInput = document.getElementById("quantity");
-    const estBox = document.getElementById("est-box");
-    const msgBox = document.getElementById("sell-msg");
-    const submitBtn = document.getElementById("submit-btn");
-    const pendingList = document.getElementById("pending-list");
+      let stocks = [];
+      let owned = {}; // ticker -> shares held
 
-    function showMsg(text, type) {
-      msgBox.textContent = text;
-      msgBox.className = `msg show ${type}`;
-    }
+      const tickerSelect = document.getElementById("ticker");
+      const sharesBox = document.getElementById("shares-owned");
+      const priceBox = document.getElementById("current-price");
+      const qtyInput = document.getElementById("quantity");
+      const estBox = document.getElementById("est-box");
+      const msgBox = document.getElementById("sell-msg");
+      const submitBtn = document.getElementById("submit-btn");
 
-    function currentPrice() {
-      const s = stocks.find(s => s.ticker === tickerSelect.value);
-      return s ? s.price : 0;
-    }
-
-    function ownedShares() {
-      const portfolio = getMockPortfolio();
-      return portfolio[tickerSelect.value] || 0;
-    }
-
-    function updateEstimate() {
-      const qty = Number(qtyInput.value) || 0;
-      priceBox.textContent = "$" + currentPrice().toFixed(2);
-      sharesBox.textContent = ownedShares();
-      estBox.textContent = "Estimated Proceeds: $" + (qty * currentPrice()).toFixed(2);
-    }
-
-    function refreshPending() {
-      const orders = getPendingOrders();
-      if (orders.length === 0) {
-        pendingList.innerHTML = `<p class="muted-note">No pending orders.</p>`;
-        return;
+      function showMsg(text, type) {
+        msgBox.textContent = text;
+        msgBox.className = `msg show ${type}`;
       }
-      pendingList.innerHTML = orders.map(o => {
-        const secsLeft = Math.max(0, Math.round((o.executesAt - Date.now()) / 1000));
-        return `
-          <div class="pending-row">
-            <span>${o.ticker} · ${o.quantity} shares · ${o.type.toUpperCase()} · executes in ${secsLeft}s</span>
-            <button class="btn secondary small" data-cancel="${o.id}">Cancel</button>
-          </div>
-        `;
-      }).join("");
+
+      function currentStock() {
+        return stocks.find(s => String(s.stockId) === tickerSelect.value);
+      }
+
+      function ownedShares() {
+        const stock = currentStock();
+        return stock ? (owned[stock.ticker] || 0) : 0;
+      }
+
+      function updateEstimate() {
+        const stock = currentStock();
+        const price = stock ? stock.price : 0;
+        priceBox.textContent = fmtMoney(price);
+        sharesBox.textContent = ownedShares();
+        estBox.textContent = "Estimated Proceeds: " + fmtMoney((Number(qtyInput.value) || 0) * price);
+      }
+
+      // Shares owned come from the portfolio (the server's holdings).
+      function refreshOwned() {
+        getPortfolioSummary().then(p => {
+          if (!p.success) return;
+          owned = {};
+          p.holdings.forEach(h => { owned[h.ticker] = h.quantity; });
+          updateEstimate();
+        });
+      }
+
+      // Shares change when an order fills, so refresh after every orders fetch.
+      const panel = startOrdersPanel(
+        document.getElementById("pending-list"),
+        document.getElementById("recent-list"),
+        { onUpdate: refreshOwned, onMessage: showMsg }
+      );
+
+      tickerSelect.addEventListener("change", updateEstimate);
+      qtyInput.addEventListener("input", updateEstimate);
+
+      submitBtn.addEventListener("click", () => {
+        const stock = currentStock();
+        if (!stock) {
+          showMsg("Pick a stock first.", "error");
+          return;
+        }
+        const quantity = Number(qtyInput.value);
+        if (quantity > ownedShares()) {
+          showMsg(`You only own ${ownedShares()} share(s) of ${stock.ticker}.`, "error");
+          return;
+        }
+
+        submitBtn.disabled = true;
+        msgBox.className = "msg";
+
+        placeOrder({ stockId: stock.stockId, orderType: "sell", quantity })
+          .then(result => {
+            submitBtn.disabled = false;
+            if (result.success) {
+              showMsg("Order placed. It fills in a few seconds. Cancel it below if you change your mind.", "success");
+              panel.reload();
+            } else {
+              showMsg(result.error, "error");
+            }
+          });
+      });
+
+      function loadStocks() {
+        getStocks().then(data => {
+          const firstLoad = stocks.length === 0;
+          stocks = data;
+          if (firstLoad) {
+            tickerSelect.innerHTML = stocks.map(s =>
+              `<option value="${s.stockId}">${escapeHtml(s.ticker)} — ${escapeHtml(s.company)}</option>`
+            ).join("");
+          }
+          updateEstimate();
+        }).catch(() => {
+          if (stocks.length === 0) {
+            tickerSelect.innerHTML = `<option>Couldn't load stocks</option>`;
+          }
+        });
+      }
+
+      loadStocks();
+      setInterval(loadStocks, 5000);
+      refreshOwned();
     }
-
-    pendingList.addEventListener("click", (e) => {
-      const id = e.target.getAttribute("data-cancel");
-      if (!id) return;
-      cancelOrder(Number(id)).then(result => {
-        if (result.success) refreshPending();
-      });
-    });
-
-    tickerSelect.addEventListener("change", updateEstimate);
-    qtyInput.addEventListener("input", updateEstimate);
-
-    submitBtn.addEventListener("click", () => {
-      const ticker = tickerSelect.value;
-      const quantity = qtyInput.value;
-      const price = currentPrice();
-
-      submitBtn.disabled = true;
-      msgBox.className = "msg";
-
-      submitSellOrder({ ticker, quantity, price }).then(result => {
-        submitBtn.disabled = false;
-        if (result.success) {
-          showMsg("Order submitted — pending execution.", "success");
-          refreshPending();
-        } else {
-          showMsg(result.error, "error");
-        }
-      });
-    });
-
-    // Load the stock list, then re-fetch every 5s so the price you see
-    // (and the price an order is placed at) follows the price generator.
-    // The dropdown is only rebuilt the first time, so a refresh never
-    // resets which stock you've picked or what you've typed.
-    function loadStocks() {
-      getStocks().then(data => {
-        const firstLoad = stocks.length === 0;
-        stocks = data;
-        if (firstLoad) {
-          tickerSelect.innerHTML = stocks.map(s => `<option value="${s.ticker}">${s.ticker} — ${s.company}</option>`).join("");
-        }
-        updateEstimate();
-      }).catch(err => {
-        if (stocks.length === 0) {
-          tickerSelect.innerHTML = `<option>Couldn't load stocks</option>`;
-        }
-      });
-    }
-    loadStocks();
-    setInterval(loadStocks, 5000);
-
-    refreshPending();
-    setInterval(() => { updateEstimate(); refreshPending(); }, 1000);
-    } // end requireLogin()
   </script>
 </body>
 </html>

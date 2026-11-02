@@ -67,7 +67,7 @@ function requireLogin() {
   if (main) {
     main.innerHTML = `
       <h1>Log In Required</h1>
-      <p class="page-sub">This action moves real money or shares, so the real backend will require a logged-in session here.</p>
+      <p class="page-sub">You need to be logged in to use this page.</p>
       <div class="stub">
         <a href="login.html">Log in</a> or <a href="create-account.html">create an account</a> to continue.
       </div>
@@ -101,4 +101,92 @@ function requireAdmin() {
     return false;
   }
   return true;
+}
+
+// ---------------------------------------------------------
+// Shared small helpers
+// ---------------------------------------------------------
+function fmtMoney(n) {
+  return n === null || n === undefined ? "—" : "$" + Number(n).toFixed(2);
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+// ---------------------------------------------------------
+// Orders panel, used by both Buy and Sell.
+//
+// Shows this user's PENDING orders (with a live countdown and a Cancel
+// button) and their most recent finished orders (executed, rejected
+// or canceled, with the reason). The list comes from GET /orders; it's
+// re-fetched every 2 seconds, and the countdown redraws twice a second
+// from the last fetch.
+//
+//   pendingEl, recentEl   the two boxes to fill
+//   options.onUpdate(orders)   called after every fetch
+//   options.onMessage(text, type)   called when a cancel fails
+// Returns { reload } so a page can refresh right after placing an order.
+// ---------------------------------------------------------
+function startOrdersPanel(pendingEl, recentEl, options = {}) {
+  let orders = [];
+
+  function orderLine(o) {
+    const what = `${o.orderType.toUpperCase()} ${o.quantity} ${escapeHtml(o.ticker)}`;
+    if (o.status === "executed") {
+      return `<div class="order-row order-executed">✓ ${what} at ${fmtMoney(o.executedPrice)} = ${fmtMoney(o.totalAmount)}</div>`;
+    }
+    if (o.status === "rejected") {
+      return `<div class="order-row order-rejected">✕ ${what} was rejected: ${escapeHtml(o.rejectReason || "unknown reason")}</div>`;
+    }
+    return `<div class="order-row order-canceled">${what} was canceled</div>`;
+  }
+
+  function render() {
+    const pending = orders.filter(o => o.status === "pending");
+    const recent = orders.filter(o => o.status !== "pending").slice(0, 5);
+
+    pendingEl.innerHTML = pending.length === 0
+      ? `<p class="muted-note">No pending orders.</p>`
+      : pending.map(o => {
+          const secs = Math.max(0, Math.ceil((o.executesAt - Date.now()) / 1000));
+          const when = secs > 0 ? `executes in ${secs}s` : "processing…";
+          return `
+            <div class="pending-row">
+              <span>${escapeHtml(o.ticker)} · ${o.quantity} shares · ${o.orderType.toUpperCase()} · ${when}</span>
+              <button class="btn secondary small" data-cancel="${o.orderId}">Cancel</button>
+            </div>`;
+        }).join("");
+
+    recentEl.innerHTML = recent.length === 0
+      ? `<p class="muted-note">No completed orders yet.</p>`
+      : recent.map(orderLine).join("");
+  }
+
+  function reload() {
+    return getOrders().then(res => {
+      if (res.success) {
+        orders = res.orders;
+        render();
+        if (options.onUpdate) options.onUpdate(orders);
+      }
+    });
+  }
+
+  pendingEl.addEventListener("click", (e) => {
+    const id = e.target.getAttribute("data-cancel");
+    if (!id) return;
+    e.target.disabled = true;
+    cancelOrder(Number(id)).then(res => {
+      if (!res.success && options.onMessage) options.onMessage(res.error, "error");
+      reload();
+    });
+  });
+
+  reload();
+  setInterval(reload, 2000);
+  setInterval(render, 500);
+  return { reload };
 }
