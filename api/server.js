@@ -17,6 +17,7 @@ const {
 
 const { marketRouter } = require("./marketRoutes");
 const { ordersRouter } = require("./orderRoutes");
+const { cashRouter } = require("./cashRoutes");
 const { startExecutor } = require("./executor");
 
 const app = express();
@@ -169,6 +170,7 @@ app.get("/users/me", requireAuth, async (req, res) => {
 
 app.use("/market", marketRouter);
 app.use("/orders", ordersRouter);
+app.use("/cash", cashRouter);
 
 const PORT = process.env.PORT || 3000;
 
