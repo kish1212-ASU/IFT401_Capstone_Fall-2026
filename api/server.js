@@ -1,8 +1,12 @@
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
-const { getAllStocks } = require("./stocks");
 const bcrypt = require("bcryptjs");
+
+const {
+  getAllStocks,
+  createStock
+} = require("./stocks");
 
 const {
   createUser,
@@ -12,7 +16,8 @@ const {
 
 const {
   createToken,
-  requireAuth
+  requireAuth,
+  requireAdmin
 } = require("./auth");
 
 const { marketRouter } = require("./marketRoutes");
@@ -25,11 +30,19 @@ const app = express();
 // Locally ALLOWED_ORIGIN is unset, so CORS is permissive for dev.
 // In a deployed environment set ALLOWED_ORIGIN to the real domain.
 const corsOptions = process.env.ALLOWED_ORIGIN
-  ? { origin: process.env.ALLOWED_ORIGIN, credentials: true }
+  ? {
+      origin: process.env.ALLOWED_ORIGIN,
+      credentials: true
+    }
   : {};
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+
+// --------------------------------------------------
+// HEALTH
+// --------------------------------------------------
 
 app.get("/health", async (req, res) => {
   try {
@@ -49,6 +62,11 @@ app.get("/health", async (req, res) => {
   }
 });
 
+
+// --------------------------------------------------
+// STOCKS
+// --------------------------------------------------
+
 app.get("/stocks", async (req, res) => {
   try {
     res.json(await getAllStocks());
@@ -61,17 +79,99 @@ app.get("/stocks", async (req, res) => {
   }
 });
 
-app.post("/users", async (req, res) => {
-  const { username, email, full_name, password } = req.body;
+app.post(
+  "/stocks",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const {
+      ticker,
+      company_name,
+      initial_price,
+      volume
+    } = req.body;
 
-  if (!username || !email || !full_name || !password) {
+    if (
+      !ticker ||
+      !company_name ||
+      initial_price === undefined ||
+      volume === undefined
+    ) {
+      return res.status(400).json({
+        error:
+          "ticker, company_name, initial_price, and volume are required"
+      });
+    }
+
+    const price = Number(initial_price);
+    const stockVolume = Number(volume);
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isInteger(stockVolume) ||
+      stockVolume < 0
+    ) {
+      return res.status(400).json({
+        error: "Invalid stock data"
+      });
+    }
+
+    try {
+      const stock = await createStock({
+        ticker,
+        company_name,
+        initial_price: price.toFixed(2),
+        volume: stockVolume
+      });
+
+      res.status(201).json(stock);
+    } catch (err) {
+      if (err.code === "23505") {
+        return res.status(409).json({
+          error: "Ticker already exists"
+        });
+      }
+
+      console.error(err);
+
+      res.status(500).json({
+        error: "Failed to create stock"
+      });
+    }
+  }
+);
+
+
+// --------------------------------------------------
+// USERS
+// --------------------------------------------------
+
+app.post("/users", async (req, res) => {
+  const {
+    username,
+    email,
+    full_name,
+    password
+  } = req.body;
+
+  if (
+    !username ||
+    !email ||
+    !full_name ||
+    !password
+  ) {
     return res.status(400).json({
-      error: "username, email, full_name, and password are required"
+      error:
+        "username, email, full_name, and password are required"
     });
   }
 
   try {
-    const password_hash = await bcrypt.hash(password, 12);
+    const password_hash = await bcrypt.hash(
+      password,
+      12
+    );
 
     const user = await createUser({
       username,
@@ -96,8 +196,16 @@ app.post("/users", async (req, res) => {
   }
 });
 
+
+// --------------------------------------------------
+// AUTHENTICATION
+// --------------------------------------------------
+
 app.post("/auth/login", async (req, res) => {
-  const { username, password } = req.body;
+  const {
+    username,
+    password
+  } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({
@@ -106,7 +214,8 @@ app.post("/auth/login", async (req, res) => {
   }
 
   try {
-    const user = await getUserByUsername(username);
+    const user =
+      await getUserByUsername(username);
 
     if (!user) {
       return res.status(401).json({
@@ -114,10 +223,11 @@ app.post("/auth/login", async (req, res) => {
       });
     }
 
-    const passwordMatches = await bcrypt.compare(
-      password,
-      user.password_hash
-    );
+    const passwordMatches =
+      await bcrypt.compare(
+        password,
+        user.password_hash
+      );
 
     if (!passwordMatches) {
       return res.status(401).json({
@@ -142,35 +252,60 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-app.post("/auth/logout", requireAuth, (req, res) => {
-  // JWT authentication is stateless.
-  // The frontend logs out by deleting its stored token.
-  res.status(204).send();
-});
+app.post(
+  "/auth/logout",
+  requireAuth,
+  (req, res) => {
+    // JWT authentication is stateless.
+    // The frontend logs out by deleting its stored token.
+    res.status(204).send();
+  }
+);
 
-app.get("/users/me", requireAuth, async (req, res) => {
-  try {
-    const user = await getUserById(req.user.user_id);
 
-    if (!user) {
-      return res.status(404).json({
-        error: "User not found"
+// --------------------------------------------------
+// CURRENT USER
+// --------------------------------------------------
+
+app.get(
+  "/users/me",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const user = await getUserById(
+        req.user.user_id
+      );
+
+      if (!user) {
+        return res.status(404).json({
+          error: "User not found"
+        });
+      }
+
+      res.json(user);
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        error: "Failed to retrieve user"
       });
     }
-
-    res.json(user);
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to retrieve user"
-    });
   }
-});
+);
+
+
+// --------------------------------------------------
+// ROUTERS
+// --------------------------------------------------
 
 app.use("/market", marketRouter);
 app.use("/orders", ordersRouter);
 app.use("/cash", cashRouter);
+
+
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
 
 const PORT = process.env.PORT || 3000;
 
