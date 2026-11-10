@@ -20,15 +20,38 @@ const {
   requireAdmin
 } = require("./auth");
 
-const { marketRouter } = require("./marketRoutes");
-const { ordersRouter } = require("./orderRoutes");
-const { cashRouter } = require("./cashRoutes");
-const { startExecutor } = require("./executor");
+const {
+  marketRouter
+} = require("./marketRoutes");
+
+const {
+  ordersRouter
+} = require("./orderRoutes");
+
+const {
+  cashRouter
+} = require("./cashRoutes");
+
+const {
+  portfolioRouter
+} = require("./portfolioRoutes");
+
+const {
+  startExecutor
+} = require("./executor");
 
 const app = express();
 
-// Locally ALLOWED_ORIGIN is unset, so CORS is permissive for dev.
-// In a deployed environment set ALLOWED_ORIGIN to the real domain.
+
+// --------------------------------------------------
+// CORS / JSON
+// --------------------------------------------------
+
+// Locally ALLOWED_ORIGIN is unset, so CORS is
+// permissive for development.
+//
+// In deployment, ALLOWED_ORIGIN should contain
+// the real frontend domain.
 const corsOptions = process.env.ALLOWED_ORIGIN
   ? {
       origin: process.env.ALLOWED_ORIGIN,
@@ -69,7 +92,9 @@ app.get("/health", async (req, res) => {
 
 app.get("/stocks", async (req, res) => {
   try {
-    res.json(await getAllStocks());
+    const stocks = await getAllStocks();
+
+    res.json(stocks);
   } catch (err) {
     console.error(err);
 
@@ -168,10 +193,8 @@ app.post("/users", async (req, res) => {
   }
 
   try {
-    const password_hash = await bcrypt.hash(
-      password,
-      12
-    );
+    const password_hash =
+      await bcrypt.hash(password, 12);
 
     const user = await createUser({
       username,
@@ -201,63 +224,71 @@ app.post("/users", async (req, res) => {
 // AUTHENTICATION
 // --------------------------------------------------
 
-app.post("/auth/login", async (req, res) => {
-  const {
-    username,
-    password
-  } = req.body;
+app.post(
+  "/auth/login",
+  async (req, res) => {
+    const {
+      username,
+      password
+    } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({
-      error: "username and password are required"
-    });
-  }
-
-  try {
-    const user =
-      await getUserByUsername(username);
-
-    if (!user) {
-      return res.status(401).json({
-        error: "Invalid username or password"
+    if (!username || !password) {
+      return res.status(400).json({
+        error:
+          "username and password are required"
       });
     }
 
-    const passwordMatches =
-      await bcrypt.compare(
-        password,
-        user.password_hash
-      );
+    try {
+      const user =
+        await getUserByUsername(username);
 
-    if (!passwordMatches) {
-      return res.status(401).json({
-        error: "Invalid username or password"
+      if (!user) {
+        return res.status(401).json({
+          error:
+            "Invalid username or password"
+        });
+      }
+
+      const passwordMatches =
+        await bcrypt.compare(
+          password,
+          user.password_hash
+        );
+
+      if (!passwordMatches) {
+        return res.status(401).json({
+          error:
+            "Invalid username or password"
+        });
+      }
+
+      const token =
+        createToken(user);
+
+      res.json({
+        token,
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role
+      });
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        error: "Failed to log in"
       });
     }
-
-    const token = createToken(user);
-
-    res.json({
-      token,
-      user_id: user.user_id,
-      username: user.username,
-      role: user.role
-    });
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to log in"
-    });
   }
-});
+);
 
 app.post(
   "/auth/logout",
   requireAuth,
   (req, res) => {
     // JWT authentication is stateless.
-    // The frontend logs out by deleting its stored token.
+    // The frontend logs out by deleting
+    // its locally stored token.
     res.status(204).send();
   }
 );
@@ -272,9 +303,10 @@ app.get(
   requireAuth,
   async (req, res) => {
     try {
-      const user = await getUserById(
-        req.user.user_id
-      );
+      const user =
+        await getUserById(
+          req.user.user_id
+        );
 
       if (!user) {
         return res.status(404).json({
@@ -287,7 +319,8 @@ app.get(
       console.error(err);
 
       res.status(500).json({
-        error: "Failed to retrieve user"
+        error:
+          "Failed to retrieve user"
       });
     }
   }
@@ -299,17 +332,28 @@ app.get(
 // --------------------------------------------------
 
 app.use("/market", marketRouter);
+
 app.use("/orders", ordersRouter);
+
 app.use("/cash", cashRouter);
+
+// portfolioRoutes contains:
+// GET /portfolio
+// GET /transactions
+app.use("/", portfolioRouter);
 
 
 // --------------------------------------------------
 // START SERVER
 // --------------------------------------------------
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+  process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("API listening on " + PORT);
+  console.log(
+    "API listening on " + PORT
+  );
+
   startExecutor();
 });
