@@ -98,6 +98,12 @@ async function settle(client, order) {
          updated_at = NOW()`,
       [order.user_id, order.stock_id, order.quantity, price]
     );
+    // Volume is the total shares purchased (business case), so every
+    // executed buy adds its quantity. Same transaction as the trade.
+    await client.query(
+      `UPDATE stocks SET volume = volume + $2, updated_at = NOW() WHERE stock_id = $1`,
+      [order.stock_id, order.quantity]
+    );
   } else {
     const sold = await client.query(
       `UPDATE holdings
