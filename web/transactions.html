@@ -11,7 +11,7 @@
 
   <main class="wide">
     <h1>Transaction History</h1>
-    <p class="page-sub" id="history-sub">Your account activity, newest first.</p>
+    <p class="page-sub">Every buy, sell, deposit, and withdrawal on your account, newest first.</p>
 
     <div class="table-scroll">
       <table class="stocks" id="tx-table">
@@ -24,11 +24,10 @@
             <th>Price/Share</th>
             <th>Total</th>
             <th>Balance After</th>
-            <th>Status</th>
           </tr>
         </thead>
         <tbody id="tx-body">
-          <tr><td colspan="8">Loading…</td></tr>
+          <tr><td colspan="7">Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -40,32 +39,20 @@
     renderNav("transactions");
 
     if (requireLogin()) {
-      function statusCell(row) {
-        if (!row.status) return "—";
-        if (row.status === "rejected") {
-          return `<span class="change-down">rejected: ${escapeHtml(row.note || "unknown reason")}</span>`;
-        }
-        if (row.status === "executed") return `<span class="change-up">executed</span>`;
-        return escapeHtml(row.status);
-      }
-
       function render() {
         getTransactionHistory().then(res => {
           const body = document.getElementById("tx-body");
           if (!res.success) {
-            body.innerHTML = `<tr><td colspan="8">Couldn't load history: ${escapeHtml(res.error)}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7">Couldn't load history: ${escapeHtml(res.error)}</td></tr>`;
             return;
           }
-
-          document.getElementById("history-sub").textContent = res.source === "orders"
-            ? "Every order you've placed, newest first. Deposits and withdrawals will appear here once the server tracks them."
-            : "Every buy, sell, deposit, and withdrawal on your account, newest first.";
 
           if (res.rows.length === 0) {
-            body.innerHTML = `<tr><td colspan="8">Nothing here yet. Place an order on the Buy page first.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7">No transactions yet. Deposit cash or place an order to get started.</td></tr>`;
             return;
           }
 
+          // Cash transactions have no ticker, quantity or price per share.
           body.innerHTML = res.rows.map(r => `
             <tr>
               <td>${new Date(r.date).toLocaleString()}</td>
@@ -75,7 +62,6 @@
               <td>${fmtMoney(r.pricePerShare)}</td>
               <td>${fmtMoney(r.total)}</td>
               <td>${fmtMoney(r.balanceAfter)}</td>
-              <td>${statusCell(r)}</td>
             </tr>
           `).join("");
         });

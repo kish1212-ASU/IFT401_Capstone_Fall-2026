@@ -433,14 +433,3 @@ button.btn.small {
 .market-badge:empty { display: none; }
 .market-badge.open { background: #eaf6ec; color: var(--green); }
 .market-badge.closed { background: #fdecec; color: var(--red); }
-.demo-tag {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  vertical-align: middle;
-}
