@@ -2,27 +2,22 @@
 // api.js — the ONLY file that talks to the server.
 //
 // Every page calls the functions below instead of using fetch()
-// itself, so when a server route changes or a new one is built,
-// this is the one file that changes.
+// itself, so when a server route changes, this is the one file
+// that changes. Every function here uses a real route:
 //
-// REAL (talks to the server):
-//   GET /stocks            getStocks()
-//   POST /users            createAccount()
-//   POST /auth/login       login()          POST /auth/logout  logout()
-//   GET /users/me          getMyProfile(), getCashBalance()
-//   GET /market            getMarketStatus()
-//   PUT /market (admin)    updateMarketHours()
+//   GET /stocks              getStocks()
+//   POST /stocks (admin)     createStock()
+//   POST /users              createAccount()
+//   POST /auth/login         login()        POST /auth/logout  logout()
+//   GET /users/me            getMyProfile(), getCashBalance()
+//   GET /market              getMarketStatus()
+//   PUT /market (admin)      updateMarketHours()
 //   POST/GET/DELETE /orders  placeOrder(), getOrders(), cancelOrder()
-//
-// NOT BUILT ON THE SERVER YET (Alex's routes). Their real code is
-// already written below, switched off in REAL_ROUTES. When a route
-// goes live, flip its switch to true, retest, done.
-//   POST /stocks (admin)             createStock()
 //   POST /cash/deposit, /cash/withdraw   depositCash(), withdrawCash()
-//   GET /portfolio                   getPortfolioSummary()
-//   GET /transactions                getTransactionHistory()
-// Until then those functions use a safe fallback (see each one).
+//   GET /portfolio           getPortfolioSummary()
+//   GET /transactions        getTransactionHistory()
 //
+// Request and response shapes are in docs/api-contract.md.
 // Auth is a JWT. Login returns { token, user_id, username, role };
 // authFetch() adds `Authorization: Bearer <token>` for you.
 // Tokens expire after 4 hours.
@@ -33,14 +28,6 @@
 const API_BASE = ["", "localhost", "127.0.0.1"].includes(location.hostname)
   ? "http://localhost:3000"
   : "/api";
-
-// Flip a switch to true ONLY after that route is live on the server.
-const REAL_ROUTES = {
-  createStock: false,   // POST /stocks (admin)
-  cash: false,          // POST /cash/deposit and /cash/withdraw
-  portfolio: false,     // GET /portfolio
-  transactions: false,  // GET /transactions
-};
 
 const NETWORK_ERROR = "Couldn't reach the server. Is the API running?";
 
@@ -70,11 +57,13 @@ function _formatVolume(n) {
   return String(n);
 }
 
-// Old versions of this site kept fake cash, holdings, orders, market
-// hours and transactions in the browser. All of that is on the server
-// now, so clear the leftovers.
+// Earlier versions of this site kept practice data in the browser
+// (fake cash, holdings, orders, market hours, transactions, demo
+// stocks, a fake login). All of that is on the server now, so clear
+// any leftovers from a browser that used an older version.
 ["stocksim_mock_cash", "stocksim_mock_portfolio", "stocksim_mock_pending",
  "stocksim_mock_market", "stocksim_mock_transactions", "stocksim_mock_session",
+ "stocksim_mock_created_stocks",
 ].forEach(k => localStorage.removeItem(k));
 
 // ===========================================================
@@ -196,29 +185,30 @@ function getCashBalance() {
 }
 
 // ===========================================================
-// STOCKS
+// ACCOUNTS
 // ===========================================================
 
-// Stocks made on the Create Stock page while that route isn't built
-// are "demo" stocks: they live only in this browser and can't be
-// traded, because the server doesn't know about them.
-const DEMO_STOCKS_KEY = "stocksim_mock_created_stocks";
+// ---------------- Create Account (POST /users) ----------------
+// 201: { user_id, username, email, full_name, role, cash_balance, ... }
+// 400 missing field, 409 username or email taken.
+function createAccount({ fullName, username, email, password }) {
+  return fetch(`${API_BASE}/users`, _json("POST", {
+    username, email, full_name: fullName, password,
+  }))
+    .then(_result)
+    .then(r => ({ success: r.success, error: r.error, user: r.success ? r.body : null }))
+    .catch(() => ({ success: false, error: NETWORK_ERROR }));
+}
 
-function _loadDemoStocks() {
-  const raw = localStorage.getItem(DEMO_STOCKS_KEY);
-  return raw ? JSON.parse(raw) : [];
-}
-function _saveDemoStocks(list) {
-  localStorage.setItem(DEMO_STOCKS_KEY, JSON.stringify(list));
-}
+// ===========================================================
+// STOCKS
+// ===========================================================
 
 // ---------------- Stock Listing (GET /stocks) ----------------
 // Real columns: stock_id, ticker, company_name, current_price (string),
 // opening_price, day_high, day_low, volume, market_cap (string,
 // computed by the server) — translated into the shape the pages use.
-// Pass { includeDemo: true } to also list browser-only demo stocks
-// (the Stocks page does; Buy, Sell and Portfolio never should).
-function getStocks({ includeDemo = false } = {}) {
+function getStocks() {
   return fetch(`${API_BASE}/stocks`)
     .then(res => {
       if (!res.ok) throw new Error("Failed to load stocks");
@@ -240,74 +230,27 @@ function getStocks({ includeDemo = false } = {}) {
         dayHigh: Number(r.day_high),
         dayLow: Number(r.day_low),
       };
-    }))
-    .then(real => (includeDemo
-      ? [...real, ..._loadDemoStocks().map(s => ({ ...s, isDemo: true }))]
-      : real));
+    }));
 }
 
 // ---------------- Create Stock (POST /stocks, admin) ----------------
-// Real request: { ticker, company_name, initial_price, volume }.
-// 201: the new stock. 400 bad field, 403 not admin, 409 ticker exists.
-// Until REAL_ROUTES.createStock is true this saves a browser-only demo
-// stock instead.
+// Request: { ticker, company_name, initial_price, volume }.
+// 201: the new stock (its current, open, high and low prices all start
+// at initial_price). 400 bad field, 403 not admin, 409 ticker exists.
 function createStock({ companyName, ticker, volume, initialPrice }) {
-  ticker = ticker.toUpperCase();
-
-  if (REAL_ROUTES.createStock) {
-    return authFetch("/stocks", _json("POST", {
-      ticker,
-      company_name: companyName,
-      initial_price: String(initialPrice),
-      volume: Number(volume),
-    }))
-      .then(_result)
-      .then(r => ({ success: r.success, error: r.error }))
-      .catch(() => ({ success: false, error: NETWORK_ERROR }));
-  }
-
-  // ---- demo mode (route not built yet) ----
-  return getStocks().then(realStocks => {
-    const demo = _loadDemoStocks();
-    if ([...realStocks, ...demo].some(s => s.ticker === ticker)) {
-      return { success: false, error: "Ticker already exists." };
-    }
-    const price = Number(initialPrice);
-    demo.push({
-      stockId: `demo-${ticker}`,
-      ticker,
-      company: companyName,
-      price,
-      change: 0,
-      volume: _formatVolume(Number(volume)),
-      marketCap: price * Number(volume),
-      openingPrice: price,
-      dayHigh: price,
-      dayLow: price,
-    });
-    _saveDemoStocks(demo);
-    return { success: true };
-  }).catch(() => ({ success: false, error: NETWORK_ERROR }));
-}
-
-// ===========================================================
-// ACCOUNTS
-// ===========================================================
-
-// ---------------- Create Account (POST /users) ----------------
-// 201: { user_id, username, email, full_name, role, cash_balance, ... }
-// 400 missing field, 409 username or email taken.
-function createAccount({ fullName, username, email, password }) {
-  return fetch(`${API_BASE}/users`, _json("POST", {
-    username, email, full_name: fullName, password,
+  return authFetch("/stocks", _json("POST", {
+    ticker: ticker.toUpperCase(),
+    company_name: companyName,
+    initial_price: String(initialPrice),
+    volume: Number(volume),
   }))
     .then(_result)
-    .then(r => ({ success: r.success, error: r.error, user: r.success ? r.body : null }))
+    .then(r => ({ success: r.success, error: r.error }))
     .catch(() => ({ success: false, error: NETWORK_ERROR }));
 }
 
 // ===========================================================
-// ORDERS (REAL)  POST/GET/DELETE /orders
+// ORDERS  POST/GET/DELETE /orders
 //
 // An order is created as "pending" and the server fills it about 8
 // seconds later (the window to cancel). Funds, shares, market hours
@@ -371,7 +314,7 @@ function cancelOrder(orderId) {
 }
 
 // ===========================================================
-// MARKET (REAL)  GET /market, PUT /market (admin)
+// MARKET  GET /market, PUT /market (admin)
 //
 // The server decides whether the market is open (hours, weekday,
 // holidays, in the market's own time zone). The pages only display it.
@@ -417,20 +360,23 @@ function updateMarketHours({ marketOpen, marketClose, timezone, tradingDays, hol
 }
 
 // ===========================================================
-// CASH  POST /cash/deposit, /cash/withdraw   (route not built yet)
+// CASH  POST /cash/deposit, /cash/withdraw
 //
 // Request { amount: "500.00" }. 201: { transaction_id,
 // transaction_type, total_amount, balance_after, created_at }.
 // 400 bad amount, 409 insufficient funds (withdraw).
+// The server accepts a positive amount with at most 2 decimals.
 // ===========================================================
 
-const CASH_NOT_BUILT = "Deposits and withdrawals aren't available yet — the server route hasn't been built.";
-
 function _cashRequest(path, amount) {
-  if (!REAL_ROUTES.cash) {
-    return Promise.resolve({ success: false, error: CASH_NOT_BUILT });
+  const text = String(amount).trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) {
+    return Promise.resolve({
+      success: false,
+      error: "Enter an amount greater than 0 with at most 2 decimal places.",
+    });
   }
-  return authFetch(path, _json("POST", { amount: Number(amount).toFixed(2) }))
+  return authFetch(path, _json("POST", { amount: text }))
     .then(_result)
     .then(r => (r.success
       ? { success: true, newBalance: Number(r.body.balance_after) }
@@ -442,151 +388,65 @@ function depositCash(amount) { return _cashRequest("/cash/deposit", amount); }
 function withdrawCash(amount) { return _cashRequest("/cash/withdraw", amount); }
 
 // ===========================================================
-// PORTFOLIO  GET /portfolio   (route not built yet)
+// PORTFOLIO  GET /portfolio
 //
-// Real response: { cash_balance, holdings_value, total_value,
+// Response: { cash_balance, holdings_value, total_value,
 // holdings: [{ stock_id, ticker, company_name, quantity,
 // avg_cost_basis, current_price, market_value, gain_loss }] }.
-//
-// Until the route exists, the same numbers are worked out here from
-// the account's real cash and its real EXECUTED orders (buys add
-// shares, sells remove them, cost basis is a weighted average). Same
-// method the server's executor uses, so the two should agree.
+// The server works out every value from the current price.
 // ===========================================================
 
 function getPortfolioSummary() {
-  if (REAL_ROUTES.portfolio) {
-    return authFetch("/portfolio")
-      .then(_result)
-      .then(r => {
-        if (!r.success) return { success: false, error: r.error };
-        const p = r.body;
-        return {
-          success: true,
-          source: "server",
-          cashBalance: Number(p.cash_balance),
-          holdingsValue: Number(p.holdings_value),
-          totalValue: Number(p.total_value),
-          holdings: p.holdings.map(h => ({
-            ticker: h.ticker,
-            company: h.company_name,
-            quantity: h.quantity,
-            price: Number(h.current_price),
-            marketValue: Number(h.market_value),
-            avgCostBasis: Number(h.avg_cost_basis),
-            gainLoss: Number(h.gain_loss),
-          })),
-        };
-      })
-      .catch(() => ({ success: false, error: NETWORK_ERROR }));
-  }
-
-  return Promise.all([getCashBalance(), getOrders("executed"), getStocks()])
-    .then(([cash, ordersRes, stocks]) => {
-      if (cash === null || !ordersRes.success) {
-        return { success: false, error: ordersRes.error || NETWORK_ERROR };
-      }
-
-      // oldest first, so the running cost basis comes out right
-      const held = {}; // ticker -> { quantity, cost }
-      [...ordersRes.orders].reverse().forEach(o => {
-        const h = held[o.ticker] || (held[o.ticker] = { quantity: 0, cost: 0 });
-        if (o.orderType === "buy") {
-          h.quantity += o.quantity;
-          h.cost += o.totalAmount;
-        } else {
-          const avg = h.quantity ? h.cost / h.quantity : 0;
-          h.quantity -= o.quantity;
-          h.cost -= avg * o.quantity;
-        }
-      });
-
-      const holdings = Object.entries(held)
-        .filter(([, h]) => h.quantity > 0)
-        .map(([ticker, h]) => {
-          const stock = stocks.find(s => s.ticker === ticker);
-          const price = stock ? stock.price : 0;
-          const marketValue = price * h.quantity;
-          return {
-            ticker,
-            company: stock ? stock.company : "(no longer listed)",
-            quantity: h.quantity,
-            price,
-            marketValue,
-            avgCostBasis: h.cost / h.quantity,
-            gainLoss: marketValue - h.cost,
-          };
-        });
-
-      const holdingsValue = holdings.reduce((sum, h) => sum + h.marketValue, 0);
+  return authFetch("/portfolio")
+    .then(_result)
+    .then(r => {
+      if (!r.success) return { success: false, error: r.error };
+      const p = r.body;
       return {
         success: true,
-        source: "orders",
-        cashBalance: cash,
-        holdingsValue,
-        totalValue: cash + holdingsValue,
-        holdings,
+        cashBalance: Number(p.cash_balance),
+        holdingsValue: Number(p.holdings_value),
+        totalValue: Number(p.total_value),
+        holdings: p.holdings.map(h => ({
+          ticker: h.ticker,
+          company: h.company_name,
+          quantity: h.quantity,
+          price: Number(h.current_price),
+          marketValue: Number(h.market_value),
+          avgCostBasis: Number(h.avg_cost_basis),
+          gainLoss: Number(h.gain_loss),
+        })),
       };
     })
     .catch(() => ({ success: false, error: NETWORK_ERROR }));
 }
 
 // ===========================================================
-// HISTORY  GET /transactions   (route not built yet)
+// HISTORY  GET /transactions
 //
-// Real rows: { transaction_id, transaction_type, ticker, quantity,
-// price_per_share, total_amount, balance_after, created_at } for
-// buys, sells, deposits and withdrawals.
-//
-// Until the route exists, the history shows this account's real
-// ORDERS instead (including canceled and rejected ones). Both are
-// turned into the same row shape for the page:
-// { id, date, type, ticker, quantity, pricePerShare, total,
-//   balanceAfter, status, note }
+// Newest first. Buys, sells, deposits and withdrawals:
+// { transaction_id, transaction_type, ticker, quantity,
+//   price_per_share, total_amount, balance_after, created_at }.
+// ticker, quantity and price_per_share are null for cash transactions.
 // ===========================================================
 
 function getTransactionHistory() {
-  if (REAL_ROUTES.transactions) {
-    return authFetch("/transactions")
-      .then(_result)
-      .then(r => (r.success
-        ? {
-            success: true,
-            source: "transactions",
-            rows: r.body.map(t => ({
-              id: t.transaction_id,
-              date: t.created_at,
-              type: t.transaction_type,
-              ticker: t.ticker,
-              quantity: t.quantity,
-              pricePerShare: t.price_per_share == null ? null : Number(t.price_per_share),
-              total: Number(t.total_amount),
-              balanceAfter: Number(t.balance_after),
-              status: null,
-              note: null,
-            })),
-          }
-        : { success: false, error: r.error }))
-      .catch(() => ({ success: false, error: NETWORK_ERROR }));
-  }
-
-  return getOrders().then(res => {
-    if (!res.success) return { success: false, error: res.error };
-    return {
-      success: true,
-      source: "orders",
-      rows: res.orders.map(o => ({
-        id: o.orderId,
-        date: o.createdAt,
-        type: o.orderType,
-        ticker: o.ticker,
-        quantity: o.quantity,
-        pricePerShare: o.executedPrice,
-        total: o.totalAmount,
-        balanceAfter: null,
-        status: o.status,
-        note: o.rejectReason,
-      })),
-    };
-  });
+  return authFetch("/transactions")
+    .then(_result)
+    .then(r => (r.success
+      ? {
+          success: true,
+          rows: r.body.map(t => ({
+            id: t.transaction_id,
+            date: t.created_at,
+            type: t.transaction_type,
+            ticker: t.ticker,
+            quantity: t.quantity,
+            pricePerShare: t.price_per_share == null ? null : Number(t.price_per_share),
+            total: Number(t.total_amount),
+            balanceAfter: Number(t.balance_after),
+          })),
+        }
+      : { success: false, error: r.error }))
+    .catch(() => ({ success: false, error: NETWORK_ERROR }));
 }

@@ -46,9 +46,6 @@
         </tbody>
       </table>
     </div>
-    <p class="muted-note" id="source-note" style="display: none;">
-      Holdings are calculated from your executed orders. They'll come straight from the server once its portfolio route is built.
-    </p>
   </main>
 
   <script src="js/components.js"></script>
@@ -74,7 +71,6 @@
           document.getElementById("cash-value").textContent = fmtMoney(p.cashBalance);
           document.getElementById("holdings-value").textContent = fmtMoney(p.holdingsValue);
           document.getElementById("total-value").textContent = fmtMoney(p.totalValue);
-          document.getElementById("source-note").style.display = p.source === "orders" ? "block" : "none";
 
           if (p.holdings.length === 0) {
             body.innerHTML = `<tr><td colspan="7">You don't own any shares yet. Visit the Buy page to get started.</td></tr>`;

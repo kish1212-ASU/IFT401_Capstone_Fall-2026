@@ -14,10 +14,6 @@
     <p class="page-sub">Deposit or withdraw from your cash account.</p>
 
     <div class="panel">
-      <div class="stub" id="cash-notice" style="display: none; margin-bottom: 16px; padding: 16px;">
-        Deposits and withdrawals aren't available yet — the server route hasn't been built.
-        The balance below is your real account balance.
-      </div>
 
       <div class="est-box" id="balance-box">Current Cash Balance: —</div>
 
@@ -43,7 +39,6 @@
     if (requireLogin()) {
       let mode = "deposit"; // or "withdraw"
       const balanceBox = document.getElementById("balance-box");
-      const notice = document.getElementById("cash-notice");
       const tabDeposit = document.getElementById("tab-deposit");
       const tabWithdraw = document.getElementById("tab-withdraw");
       const amountLabel = document.getElementById("amount-label");
@@ -96,12 +91,6 @@
         });
       });
 
-      // Until the server's cash routes exist, show the real balance but
-      // switch the form off, so nobody "deposits" money that isn't real.
-      if (!REAL_ROUTES.cash) {
-        notice.style.display = "block";
-        [tabDeposit, tabWithdraw, amountInput, submitBtn].forEach(el => { el.disabled = true; });
-      }
 
       refreshBalance();
       setInterval(refreshBalance, 5000);

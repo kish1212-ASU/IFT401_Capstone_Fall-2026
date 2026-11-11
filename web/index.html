@@ -101,7 +101,7 @@
         const flash = prev === undefined || prev === s.price ? "" : (s.price > prev ? "flash-up" : "flash-down");
         return `
           <tr class="stock-row" data-ticker="${s.ticker}">
-            <td><strong>${escapeHtml(s.ticker)}</strong>${s.isDemo ? ' <span class="demo-tag">demo</span>' : ""}</td>
+            <td><strong>${escapeHtml(s.ticker)}</strong></td>
             <td>${escapeHtml(s.company)}</td>
             <td class="${flash}">${formatMoney(s.price)}</td>
             <td class="${changeClass}">${changeSign}${s.change}%</td>
@@ -135,7 +135,7 @@
 
     function loadStocks() {
       loadMarket();
-      getStocks({ includeDemo: true }).then(render).catch(err => {
+      getStocks().then(render).catch(err => {
         // only show an error if we've never loaded anything; otherwise
         // quietly keep the last good data until the next refresh works
         if (loadedStocks.length === 0) {
